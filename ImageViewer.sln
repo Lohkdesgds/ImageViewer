@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.30804.86
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ImageViewer", "ImageViewer.vcxproj", "{88273953-704C-48B2-BAA7-B646B2D26110}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x64 = Debug|x64
+		Debug|x86 = Debug|x86
+		Release|x64 = Release|x64
+		Release|x86 = Release|x86
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{88273953-704C-48B2-BAA7-B646B2D26110}.Debug|x64.ActiveCfg = Debug|x64
+		{88273953-704C-48B2-BAA7-B646B2D26110}.Debug|x64.Build.0 = Debug|x64
+		{88273953-704C-48B2-BAA7-B646B2D26110}.Debug|x86.ActiveCfg = Debug|Win32
+		{88273953-704C-48B2-BAA7-B646B2D26110}.Debug|x86.Build.0 = Debug|Win32
+		{88273953-704C-48B2-BAA7-B646B2D26110}.Release|x64.ActiveCfg = Release|x64
+		{88273953-704C-48B2-BAA7-B646B2D26110}.Release|x64.Build.0 = Release|x64
+		{88273953-704C-48B2-BAA7-B646B2D26110}.Release|x86.ActiveCfg = Release|Win32
+		{88273953-704C-48B2-BAA7-B646B2D26110}.Release|x86.Build.0 = Release|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {DF0EFC49-8D70-488F-8245-AC6DFE400B6C}
+	EndGlobalSection
+EndGlobal
