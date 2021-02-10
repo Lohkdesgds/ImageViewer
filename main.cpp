@@ -11,7 +11,7 @@ const std::string common_path = "%appdata%/Lohk's Studios/Image Viewer/";
 int main(int argc, char* argv[]) {
 
 	Logger logg;
-	EventHandler handling{ Tools::superthread::performance_mode::HIGH_PERFORMANCE };
+	EventHandler handling{ Tools::superthread::performance_mode::PERFORMANCE };
 	Display disp{ 0 };
 	std::vector<std::string> parsed;
 	EventTimer timer{ 1.0 / 60 };
@@ -100,6 +100,8 @@ int main(int argc, char* argv[]) {
 	auto ended = disp.init();
 
 	while (!disp.display_ready()) std::this_thread::yield();
+
+	disp.set_window_name("Image Viewer LSW " + LSW::v5::Work::version_app);
 
 	handling.add(disp.get_event_source());
 	handling.add(get_keyboard_event());
