@@ -3,19 +3,23 @@
 #include <Lunaris/events.h>
 
 #include <allegro5/allegro_native_dialog.h>
+#include <allegro5/allegro_windows.h>
+#include "resource.h"
 
 using namespace Lunaris;
-
-constexpr int minimum_scale = -45;
-constexpr int maximum_scale = 1000;
 
 std::string gen_path();
 
 const std::string common_path = gen_path();
+const std::string fixed_app_name = "ImageViewer | Lunaris edition 2021";
+constexpr size_t max_timeouts = 3;
 
 struct auxiliar_data {
 	std::atomic<unsigned> move_buttons_triggered = 0; // mouse, keyboard SPACE
 	bool quit = false;
+	bool got_into_load = false;
+	std::atomic<bool> can_quit_fast = false;
+	size_t times_no_quit = 0;
 	std::atomic<bool> update_camera = true;
 	std::atomic<float> zoom = 1.0f;
 	//std::atomic<float> camera_offx = 0.0f;
@@ -30,6 +34,7 @@ struct auxiliar_data {
 	bool update_indexed_image = true; // update once
 };
 
+void icon_fix(const display&);
 
 int main(int argc, char* argv[]) {
 
@@ -40,11 +45,30 @@ int main(int argc, char* argv[]) {
 	auxiliar_data aux_data;
 	transform camera;
 	ALLEGRO_DISPLAY* source_disp = nullptr;
+	thread error_check;
 
 	auto file_texture = make_hybrid<texture>();
 	block image_on_screen;
 	const color black = color(0, 0, 0);
 	const color loading = color(127, 127, 127);
+
+	error_check.task_async([&] {
+		if (aux_data.quit || aux_data.got_into_load) {
+			if (aux_data.times_no_quit < max_timeouts) {
+				++aux_data.times_no_quit;
+			}
+			else {
+				disp.set_window_title(fixed_app_name + " | I'm still trying to load... (ESCAPE/X = abort)");
+				aux_data.can_quit_fast = true;
+			}
+		}
+		else if (aux_data.times_no_quit > 0) {
+			aux_data.times_no_quit = 0;
+			aux_data.can_quit_fast = false;
+			disp.set_window_title(fixed_app_name);
+		}
+	}, thread::speed::INTERVAL, 2.0);
+
 
 	const auto func_update_camera = [&] {
 		float prop = 1.0f;
@@ -53,8 +77,12 @@ int main(int argc, char* argv[]) {
 		}
 
 		camera.build_classic_fixed_proportion(disp.get_width(), disp.get_height(), prop, aux_data.zoom);
-		//camera.translate(aux_data.camera_offx, aux_data.camera_offy);
 		camera.apply();
+	};
+
+	const auto quit_fast_f = [&] {
+		al_show_native_message_box(nullptr, "Sorry about that", "I couldn't load in time!", "Sorry about taking so long to open this file. Maybe something bad happened. Please report!", nullptr, ALLEGRO_MESSAGEBOX_ERROR);
+		std::terminate();
 	};
 
 
@@ -118,7 +146,7 @@ int main(int argc, char* argv[]) {
 			.set_height(conf.get_as<int>("general", "height"))
 		)
 		.set_vsync(true)
-		.set_window_title("ImageViewer | Lunaris edition 2021")
+		.set_window_title(fixed_app_name)
 		.set_fullscreen(conf.get_as<bool>("general", "was_fullscreen"))
 		.set_extra_flags(al_get_new_display_flags() | ALLEGRO_RESIZABLE | (conf.get_as<bool>("general", "was_fullscreen") ? ALLEGRO_FULLSCREEN_WINDOW : 0))
 	)) {
@@ -127,17 +155,22 @@ int main(int argc, char* argv[]) {
 		return -1;
 	}
 
-	if (!(source_disp = al_get_current_display())) {
+	if (!(source_disp = disp.get_raw_display())) {
 		cout << console::color::RED << "Bad news. Could not find display.";
 		disp.destroy();
 		al_show_native_message_box(nullptr, "Trouble finding Display", "Can't find created display!", "Please check you drivers or ask for support!", nullptr, ALLEGRO_MESSAGEBOX_ERROR);
 		return -1;
 	}
 
+	icon_fix(disp);
+
 	disp.hook_event_handler([&](const ALLEGRO_EVENT& ev) {
 		switch (ev.type) {
 		case ALLEGRO_EVENT_DISPLAY_CLOSE:
 			aux_data.quit = true;
+			if (aux_data.can_quit_fast) {
+				quit_fast_f();
+			}
 			break;
 		case ALLEGRO_EVENT_DISPLAY_RESIZE:
 			conf.set("general", "width", ev.display.width);
@@ -171,6 +204,9 @@ int main(int argc, char* argv[]) {
 					break;
 				case ALLEGRO_KEY_ESCAPE:
 					aux_data.quit = true;
+					if (aux_data.can_quit_fast) {
+						quit_fast_f();
+					}
 					break;
 				case ALLEGRO_KEY_LEFT:
 					if (aux_data.index-- == 0) aux_data.index = parsed.size() - 1;
@@ -226,9 +262,6 @@ int main(int argc, char* argv[]) {
 
 				image_on_screen.set<float>(enum_sprite_float_e::POS_X, image_on_screen.get<float>(enum_sprite_float_e::POS_X) + 0.0005f * ev.mouse.dx / aux_data.zoom);
 				image_on_screen.set<float>(enum_sprite_float_e::POS_Y, image_on_screen.get<float>(enum_sprite_float_e::POS_Y) + 0.0005f * ev.mouse.dy / aux_data.zoom);
-
-				//aux_data.camera_offx = aux_data.camera_offx + 0.3f * ev.mouse.dx; // can't +=? lol
-				//aux_data.camera_offy = aux_data.camera_offy + 0.3f * ev.mouse.dy; // can't +=? lol
 
 				any_news = true;
 
@@ -293,7 +326,28 @@ int main(int argc, char* argv[]) {
 			loading.clear_to_this();
 			disp.flip();
 
-			while (!file_texture->load(parsed[aux_data.index]) && !aux_data.quit) aux_data.index = (++aux_data.index >= parsed.size()) ? 0ULL : static_cast<unsigned long long>(aux_data.index);
+			file_texture->destroy();
+
+			aux_data.got_into_load = true;
+
+			thread parallel_load([&] {
+				while (!file_texture->load(parsed[aux_data.index]) && !aux_data.quit) aux_data.index = (++aux_data.index >= parsed.size()) ? 0ULL : static_cast<unsigned long long>(aux_data.index);
+				aux_data.got_into_load = false;
+			});
+
+			double rn_t = al_get_time();
+			while (aux_data.got_into_load) {
+				color rndcolor(
+					0.4f + 0.225f * static_cast<float>(cos((al_get_time() - rn_t) * 0.88742)),
+					0.4f + 0.225f * static_cast<float>(cos((al_get_time() - rn_t) * 0.59827)),
+					0.4f + 0.225f * static_cast<float>(cos((al_get_time() - rn_t) * 0.44108))
+				);
+				rndcolor.clear_to_this();
+				disp.flip();
+			}
+
+			al_convert_bitmaps();
+
 			if (aux_data.quit) continue;
 		}
 		if (aux_data.update_camera) 
@@ -331,4 +385,17 @@ std::string gen_path()
 	path_str += "Lohk's Studios/Image Viewer/";
 	al_destroy_path(path);
 	return path_str;
+}
+
+void icon_fix(const display& disp)
+{
+	HWND winhandle;
+	HICON icon;
+
+	icon = (HICON)LoadImage(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_ICON1), IMAGE_ICON, 0, 0, LR_DEFAULTCOLOR); //LoadIconA(GetModuleHandle(NULL), "IDI_ICON1");
+	if (icon) {
+		winhandle = al_get_win_window_handle(disp.get_raw_display());
+		SetClassLongPtr(winhandle, GCLP_HICON, (LONG_PTR)icon);
+		SetClassLongPtr(winhandle, GCLP_HICONSM, (LONG_PTR)icon);
+	}
 }
