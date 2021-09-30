@@ -26,6 +26,7 @@ Key combination | Action
 *ALT + F4* | *Close app*
 *ESC* | *Close app*
 *R* | *Reset camera view*
+*F* | *Rotate image +90º*
 *Mouse Scroll* | *Zoom in/out*
 *Drag/SPACE and move* | *Move camera*
 

@@ -84,7 +84,7 @@
     <Allegro_AddonColor>true</Allegro_AddonColor>
     <Allegro_AddonVideo>true</Allegro_AddonVideo>
     <Allegro_LibraryType>DynamicDebug</Allegro_LibraryType>
-    <IncludePath>$(SolutionDir)/Lunaris/include;$(IncludePath)</IncludePath>
+    <IncludePath>$(SolutionDir)/Lunaris/include;$(SolutionDir)/JSON/single_include;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <LinkIncremental>false</LinkIncremental>
@@ -100,7 +100,7 @@
     <Allegro_AddonColor>true</Allegro_AddonColor>
     <Allegro_AddonVideo>true</Allegro_AddonVideo>
     <Allegro_LibraryType>StaticMonolithRelease</Allegro_LibraryType>
-    <IncludePath>$(SolutionDir)/Lunaris/include;$(IncludePath)</IncludePath>
+    <IncludePath>$(SolutionDir)/Lunaris/include;$(SolutionDir)/JSON/single_include;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
@@ -116,7 +116,7 @@
     <Allegro_AddonColor>true</Allegro_AddonColor>
     <Allegro_AddonVideo>true</Allegro_AddonVideo>
     <Allegro_LibraryType>DynamicDebug</Allegro_LibraryType>
-    <IncludePath>$(SolutionDir)/Lunaris/include;$(IncludePath)</IncludePath>
+    <IncludePath>$(SolutionDir)/Lunaris/include;$(SolutionDir)/JSON/single_include;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LinkIncremental>false</LinkIncremental>
@@ -132,7 +132,7 @@
     <Allegro_AddonColor>true</Allegro_AddonColor>
     <Allegro_AddonVideo>true</Allegro_AddonVideo>
     <Allegro_LibraryType>StaticMonolithRelease</Allegro_LibraryType>
-    <IncludePath>$(SolutionDir)/Lunaris/include;$(IncludePath)</IncludePath>
+    <IncludePath>$(SolutionDir)/Lunaris/include;$(SolutionDir)/JSON/single_include;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>

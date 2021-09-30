@@ -4,14 +4,20 @@
 
 #include <allegro5/allegro_native_dialog.h>
 #include <allegro5/allegro_windows.h>
+
+#include <nlohmann/json.hpp>
+
 #include "resource.h"
+#include <shellapi.h>
 
 using namespace Lunaris;
 
 std::string gen_path();
 
+const std::string url_update_check = "https://api.github.com/repos/Lohkdesgds/ImageViewer/releases/latest";
 const std::string common_path = gen_path();
-const std::string fixed_app_name = "ImageViewer | Lunaris edition 2021";
+const std::string version_str = "v2.1.0";
+const std::string fixed_app_name = "ImageViewer " + version_str + " | Lunaris edition 2021";
 constexpr size_t max_timeouts = 3;
 
 struct auxiliar_data {
@@ -35,6 +41,7 @@ struct auxiliar_data {
 };
 
 void icon_fix(const display&);
+void check_update_async(auxiliar_data&, config&);
 
 int main(int argc, char* argv[]) {
 
@@ -45,12 +52,13 @@ int main(int argc, char* argv[]) {
 	auxiliar_data aux_data;
 	transform camera;
 	ALLEGRO_DISPLAY* source_disp = nullptr;
-	thread error_check;
+	thread error_check, update_check;
 
-	auto file_texture = make_hybrid<texture>();
+	hybrid_memory<texture> file_texture;
+	hybrid_memory<texture> file_texture_gif;
+
 	block image_on_screen;
 	const color black = color(0, 0, 0);
-	const color loading = color(127, 127, 127);
 
 	error_check.task_async([&] {
 		if (aux_data.quit || aux_data.got_into_load) {
@@ -69,12 +77,19 @@ int main(int argc, char* argv[]) {
 		}
 	}, thread::speed::INTERVAL, 2.0);
 
-
 	const auto func_update_camera = [&] {
 		float prop = 1.0f;
-		if (!file_texture.empty()) {
-			prop = 1.0f * file_texture->get_width() / file_texture->get_height();
+		if (!file_texture.empty() && !file_texture->empty()) {
+			const double pp = fabs(cos(image_on_screen.get<float>(enum_sprite_float_e::ROTATION))); // 1.0 for 0 or 180
+			if (pp > 0.9) prop = 1.0f * file_texture->get_width() / file_texture->get_height();
+			else prop = 1.0f * file_texture->get_height() / file_texture->get_width();
 		}
+		else if (!file_texture_gif.empty() && !file_texture_gif->empty()) {
+			const double pp = fabs(cos(image_on_screen.get<float>(enum_sprite_float_e::ROTATION))); // 1.0 for 0 or 180
+			if (pp > 0.9) prop = 1.0f * file_texture_gif->get_width() / file_texture_gif->get_height();
+			else prop = 1.0f * file_texture_gif->get_height() / file_texture_gif->get_width();
+		}
+		else return;
 
 		camera.build_classic_fixed_proportion(disp.get_width(), disp.get_height(), prop, aux_data.zoom);
 		camera.apply();
@@ -91,9 +106,12 @@ int main(int argc, char* argv[]) {
 	conf.ensure("general", "smooth_scale", true, config::config_section_mode::SAVE);
 	conf.ensure("general", "width", 1280, config::config_section_mode::SAVE);
 	conf.ensure("general", "height", 720, config::config_section_mode::SAVE);
+	conf.ensure("general", "last_version_check", version_str, config::config_section_mode::SAVE);
 	conf.ensure<std::string>("general", "last_seen_list", {}, config::config_section_mode::SAVE);
 
 	cout << console::color::GREEN << "Loading ImageViewer...";
+
+	update_check.task_async([&] {check_update_async(aux_data, conf); }, thread::speed::ONCE);
 
 	for (int u = 1; u < argc; u++) {
 		file tempfp;
@@ -164,6 +182,9 @@ int main(int argc, char* argv[]) {
 
 	icon_fix(disp);
 
+	file_texture = make_hybrid<texture>();
+	file_texture_gif = make_hybrid_derived<texture, texture_gif>();
+
 	disp.hook_event_handler([&](const ALLEGRO_EVENT& ev) {
 		switch (ev.type) {
 		case ALLEGRO_EVENT_DISPLAY_CLOSE:
@@ -199,8 +220,17 @@ int main(int argc, char* argv[]) {
 				case ALLEGRO_KEY_R:
 					image_on_screen.set<float>(enum_sprite_float_e::POS_X, 0.0f);
 					image_on_screen.set<float>(enum_sprite_float_e::POS_Y, 0.0f);
+					image_on_screen.set<float>(enum_sprite_float_e::ROTATION, 0.0f);
 					aux_data.zoom = 1.0f;
 					aux_data.update_camera = true;
+					break;
+				case ALLEGRO_KEY_F:
+				{
+					float fff = image_on_screen.get<float>(enum_sprite_float_e::ROTATION) + static_cast<float>(0.5 * ALLEGRO_PI);
+					if (fff >= static_cast<float>(1.99 * ALLEGRO_PI)) fff = 0.0f;
+					image_on_screen.set<float>(enum_sprite_float_e::ROTATION, fff);
+					aux_data.update_camera = true;
+				}
 					break;
 				case ALLEGRO_KEY_ESCAPE:
 					aux_data.quit = true;
@@ -212,6 +242,7 @@ int main(int argc, char* argv[]) {
 					if (aux_data.index-- == 0) aux_data.index = parsed.size() - 1;
 					image_on_screen.set<float>(enum_sprite_float_e::POS_X, 0.0f);
 					image_on_screen.set<float>(enum_sprite_float_e::POS_Y, 0.0f);
+					image_on_screen.set<float>(enum_sprite_float_e::ROTATION, 0.0f);
 					aux_data.zoom = 1.0f;
 					aux_data.update_indexed_image = true;
 					aux_data.update_camera = true;
@@ -220,6 +251,7 @@ int main(int argc, char* argv[]) {
 					if (++aux_data.index >= parsed.size()) aux_data.index = 0;
 					image_on_screen.set<float>(enum_sprite_float_e::POS_X, 0.0f);
 					image_on_screen.set<float>(enum_sprite_float_e::POS_Y, 0.0f);
+					image_on_screen.set<float>(enum_sprite_float_e::ROTATION, 0.0f);
 					aux_data.zoom = 1.0f;
 					aux_data.update_indexed_image = true;
 					aux_data.update_camera = true;
@@ -314,7 +346,6 @@ int main(int argc, char* argv[]) {
 
 	image_on_screen.set<float>(enum_sprite_float_e::SCALE_G, 2.0f);
 	image_on_screen.set<float>(enum_sprite_float_e::DRAW_MOVEMENT_RESPONSIVENESS, 0.4f);
-	image_on_screen.texture_insert(file_texture);
 
 	while (!aux_data.quit) 
 	{
@@ -323,30 +354,66 @@ int main(int argc, char* argv[]) {
 		if (aux_data.update_indexed_image) {
 			aux_data.update_indexed_image = false;
 
-			loading.clear_to_this();
-			disp.flip();
-
-			file_texture->destroy();
-
 			aux_data.got_into_load = true;
 
+			image_on_screen.texture_remove_all();
+
 			thread parallel_load([&] {
-				while (!file_texture->load(parsed[aux_data.index]) && !aux_data.quit) aux_data.index = (++aux_data.index >= parsed.size()) ? 0ULL : static_cast<unsigned long long>(aux_data.index);
+				size_t old_p = aux_data.index;
+				int loops = 0;
+
+				while (!aux_data.quit) {
+					if (old_p == aux_data.index && ++loops > 2) {
+						al_show_native_message_box(nullptr, "Could not load image(s)!", "Something went wrong", "Maybe the file format is not supported? I tried all options you gave me. None worked.", nullptr, ALLEGRO_MESSAGEBOX_ERROR);
+						aux_data.quit = true;
+						break;
+					}
+
+					const std::string& enstr = parsed[aux_data.index];
+					bool is_gif = false;
+					if (enstr.size() > 4) {
+						const std::string ending = ".gif";
+						is_gif = std::equal(ending.rbegin(), ending.rend(), enstr.rbegin());
+					}
+
+					cout << "Loading '" << enstr << "'";
+
+					if (is_gif) {
+						file_texture->destroy();
+
+						auto gif_interf = (texture_gif*)file_texture_gif.get();
+						if (!gif_interf->load(enstr)) aux_data.index = (++aux_data.index >= parsed.size()) ? 0ULL : static_cast<unsigned long long>(aux_data.index);
+						else {
+							image_on_screen.texture_insert(file_texture_gif);
+							break;
+						}
+					}
+					else {
+						file_texture_gif->destroy();
+
+						if (!file_texture->load(enstr)) aux_data.index = (++aux_data.index >= parsed.size()) ? 0ULL : static_cast<unsigned long long>(aux_data.index);
+						else {
+							image_on_screen.texture_insert(file_texture);
+							break;
+						}
+					}
+				}
+
 				aux_data.got_into_load = false;
-			});
+			}, thread::speed::ONCE);
 
 			double rn_t = al_get_time();
 			while (aux_data.got_into_load) {
 				color rndcolor(
-					0.4f + 0.225f * static_cast<float>(cos((al_get_time() - rn_t) * 0.88742)),
-					0.4f + 0.225f * static_cast<float>(cos((al_get_time() - rn_t) * 0.59827)),
-					0.4f + 0.225f * static_cast<float>(cos((al_get_time() - rn_t) * 0.44108))
+					0.4f + 0.225f * static_cast<float>(cos((al_get_time() - rn_t) * 1.88742)),
+					0.4f + 0.225f * static_cast<float>(cos((al_get_time() - rn_t) * 2.59827)),
+					0.4f + 0.225f * static_cast<float>(cos((al_get_time() - rn_t) * 1.04108))
 				);
 				rndcolor.clear_to_this();
 				disp.flip();
 			}
 
-			al_convert_bitmaps();
+			//al_convert_bitmaps();
 
 			if (aux_data.quit) continue;
 		}
@@ -356,12 +423,22 @@ int main(int argc, char* argv[]) {
 			func_update_camera();
 		}
 
-		image_on_screen.draw();
+		if (image_on_screen.texture_size()) image_on_screen.draw();
+		else quit_fast_f();
 
 		disp.flip();
 	}
 
+	disp.destroy();
 	conf.flush();
+
+	error_check.signal_stop();
+	update_check.signal_stop();
+
+	std::this_thread::sleep_for(std::chrono::seconds(1));
+
+	error_check.force_kill();
+	update_check.force_kill();
 }
 
 std::string gen_path()
@@ -398,4 +475,51 @@ void icon_fix(const display& disp)
 		SetClassLongPtr(winhandle, GCLP_HICON, (LONG_PTR)icon);
 		SetClassLongPtr(winhandle, GCLP_HICONSM, (LONG_PTR)icon);
 	}
+}
+
+void check_update_async(auxiliar_data& aux, config& conf)
+{
+	cout << console::color::DARK_PURPLE << "Checking version...";
+
+	downloader down;
+	if (!down.get(url_update_check)) {
+		cout << console::color::DARK_PURPLE << "Failed to check version.";
+		return;
+	}
+
+	nlohmann::json gitt = nlohmann::json::parse(down.read(), nullptr, false);
+
+	if (gitt.empty() || gitt.is_discarded()) {
+		cout << console::color::DARK_PURPLE << "Failed to check version.";
+		return;
+	}
+
+	std::string update_url, tag_name, title, body;
+
+	if (auto it = gitt.find("html_url"); it != gitt.end() && it->is_string()) update_url = it->get<std::string>();
+	if (auto it = gitt.find("tag_name"); it != gitt.end() && it->is_string()) tag_name = it->get<std::string>();
+	if (auto it = gitt.find("name"); it != gitt.end() && it->is_string())     title = it->get<std::string>();
+	if (auto it = gitt.find("body"); it != gitt.end() && it->is_string())     body = it->get<std::string>();
+
+	if (update_url.empty() || tag_name.empty() || title.empty() || body.empty()) {
+		cout << console::color::DARK_PURPLE << "Invalid new version body. Skipped.";
+		return;
+	}
+
+	if (conf.get("general", "last_version_check") != tag_name) {
+		cout << console::color::DARK_PURPLE << "New version!";
+		std::this_thread::sleep_for(std::chrono::seconds(3));
+
+		int opt = al_show_native_message_box(nullptr, "New version detected! Download (OK) or skip this version (Cancel)?", title.c_str(), body.c_str(), nullptr, ALLEGRO_MESSAGEBOX_OK_CANCEL);
+
+		if (opt == 1) { // ask again if user don't properly update
+			ShellExecuteA(0, 0, update_url.c_str(), 0, 0, SW_SHOW);
+			return;
+		}
+	}
+	else {
+		cout << console::color::DARK_PURPLE << "No new version.";
+	}
+
+	conf.set("general", "last_version_check", tag_name);
 }
