@@ -1,3 +1,6 @@
 [submodule "Lunaris"]
 	path = Lunaris
 	url = https://www.github.com/Lohkdesgds/Lunaris
+[submodule "JSON"]
+	path = JSON
+	url = https://github.com/nlohmann/json
