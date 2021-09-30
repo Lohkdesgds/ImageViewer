@@ -9,6 +9,7 @@
 
 #include "resource.h"
 #include <shellapi.h>
+#include <filesystem>
 
 using namespace Lunaris;
 
@@ -16,7 +17,7 @@ std::string gen_path();
 
 const std::string url_update_check = "https://api.github.com/repos/Lohkdesgds/ImageViewer/releases/latest";
 const std::string common_path = gen_path();
-const std::string version_str = "v2.1.0";
+const std::string version_str = "v2.1.1";
 const std::string fixed_app_name = "ImageViewer " + version_str + " | Lunaris edition 2021";
 constexpr size_t max_timeouts = 3;
 
@@ -445,22 +446,38 @@ std::string gen_path()
 {
 	al_init();
 	auto path = al_get_standard_path(ALLEGRO_USER_DATA_PATH);
-	std::string path_str = al_path_cstr(path, '/');
+	std::string path_str = al_path_cstr(path, ALLEGRO_NATIVE_PATH_SEP);
 	if (path_str.empty()) {
 		al_show_native_message_box(nullptr, "Early load error", "Can't find config path!", "Somehow I can't find app data path! Please report!", nullptr, ALLEGRO_MESSAGEBOX_ERROR);
 		throw std::runtime_error("FATAL ERROR CANNOT FIND APPDATA PATH!");
 	}
 #ifdef _WIN32
 	path_str.pop_back();
-	size_t p = path_str.rfind('/');
+	size_t p = path_str.rfind(ALLEGRO_NATIVE_PATH_SEP);
 	if (p == std::string::npos) {
 		al_show_native_message_box(nullptr, "Early load error", "Can't find config path!", "Somehow the data path I found is invalid! Please report!", nullptr, ALLEGRO_MESSAGEBOX_ERROR);
 		throw std::runtime_error("FATAL ERROR CANNOT FIND APPDATA PATH!");
 	}
 	path_str = path_str.substr(0, p + 1);
 #endif
-	path_str += "Lohk's Studios/Image Viewer/";
 	al_destroy_path(path);
+
+	path_str += std::string("Lohk's Studios") + ALLEGRO_NATIVE_PATH_SEP + std::string("Image Viewer") + ALLEGRO_NATIVE_PATH_SEP;
+
+	for (size_t p = 0; p < path_str.size(); p++) {
+		size_t newp = path_str.find(ALLEGRO_NATIVE_PATH_SEP, p);
+		if (newp < p) break; // find out of range?
+		else p = newp;
+
+		std::string tmp = path_str.substr(0, p);
+
+		std::error_code err;
+		if (!std::filesystem::create_directories(tmp, err) && err.value() != 0) {
+			cout << console::color::GOLD << "Create directories error:" << err.message();
+		}
+
+	}
+
 	return path_str;
 }
 
