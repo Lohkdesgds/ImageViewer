@@ -17,7 +17,7 @@ std::string gen_path();
 
 const std::string url_update_check = "https://api.github.com/repos/Lohkdesgds/ImageViewer/releases/latest";
 const std::string common_path = gen_path();
-const std::string version_str = "v2.1.1";
+const std::string version_str = "v2.1.1b";
 const std::string fixed_app_name = "ImageViewer " + version_str + " | Lunaris edition 2021";
 constexpr size_t max_timeouts = 3;
 
@@ -523,7 +523,7 @@ void check_update_async(auxiliar_data& aux, config& conf)
 		return;
 	}
 
-	if (conf.get("general", "last_version_check") != tag_name) {
+	if (conf.get("general", "last_version_check") != tag_name && version_str != tag_name) {
 		cout << console::color::DARK_PURPLE << "New version!";
 		std::this_thread::sleep_for(std::chrono::seconds(3));
 
