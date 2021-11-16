@@ -215,13 +215,18 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="configuration.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="window_control.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="shared.h" />
+    <ClInclude Include="configuration.h" />
     <ClInclude Include="resource.h" />
+    <ClInclude Include="window_control.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="ImageViewer.rc" />

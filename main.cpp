@@ -6,650 +6,493 @@
 #include <nlohmann/json.hpp>
 
 #include "resource.h"
-#include <shellapi.h>
-#include <filesystem>
+
+#include "window_control.h"
+#include "configuration.h"
+#include "shared.h"
+
+#define IMGVW_STANDARD_START_MAIN Lunaris::console::color::BLUE << "[MAINCL] " << Lunaris::console::color::GRAY 
 
 using namespace Lunaris;
 
-std::string gen_path();
+std::vector<std::string> parse_call(const int, const char*[]);
+std::vector<std::string> recover_conf_files(const ImageViewer::ConfigManager&);
+std::vector<std::string> get_files_in_folder(const std::string&);
+hybrid_memory<file> get_URL(const std::string&);
+std::string get_final_name(std::string);
 
-const std::string url_update_check = "https://api.github.com/repos/Lohkdesgds/ImageViewer/releases/latest";
-const std::string common_path = gen_path();
-const std::string version_str = "v2.2.0";
-const std::string fixed_app_name = "ImageViewer " + version_str + " | Lunaris edition 2021";
-constexpr size_t max_timeouts = 3;
-const double event_generic_time_relax = 1.0; // sec
-const double event_display_time_relax = 0.2; // sec
-const double show_text_on_screen_for = 2.0; // sec
+int main(const int argc, const char* argv[])
+{
+	cout << IMGVW_STANDARD_START_MAIN << "Starting Image Viewer...";
 
-struct auxiliar_data {
-	std::atomic<unsigned> move_buttons_triggered = 0; // mouse, keyboard SPACE
-	bool quit = false;
-	bool got_into_load = false;
-	std::atomic<bool> can_quit_fast = false;
-	size_t times_no_quit = 0;
-	std::atomic<bool> update_camera = true;
-	std::atomic<float> zoom = 1.0f;
-	//std::atomic<float> camera_offx = 0.0f;
-	//std::atomic<float> camera_offy = 0.0f;
 	std::atomic<size_t> index = 0;
+	std::atomic_bool keep_rolling = true;
+	ImageViewer::ConfigManager conf;
+	ImageViewer::WindowControl window(conf);
+	mouse mousectl(window.get_raw_display());
+	keys kbctl;
 
-	int mouse_fix_x = 0;
-	int mouse_fix_y = 0;
+	safe_vector<std::string> vec;
+	safe_vector<display_event> evvs;
 
-	bool keyboard_space_triggered = false;
-	bool mouse_0_triggered = false;
-	std::atomic<int> update_indexed_image = 0; // off
-};
+	cout << IMGVW_STANDARD_START_MAIN << "Parsing call and config files...";
 
-void icon_fix(const display&);
-void check_update_async(auxiliar_data&, config&);
+	vec.safe([&](auto& vc) {vc = parse_call(argc, argv); });
+	if (!vec.size()) vec.safe([&](auto& vc) {vc = recover_conf_files(conf); });
 
-int main(int argc, char* argv[]) {
+	cout << IMGVW_STANDARD_START_MAIN << "Setting up window quit and stuff...";
 
-	cout << console::color::AQUA << "Loading ImageViewer " << version_str << " running on Lunaris Build #" << LUNARIS_BUILD_NUMBER;
+	window.on_quit([&] {keep_rolling = false; });
+	window.on_menu([&](menu_event& ev) {
+		switch (ev.get_id()) {
+		case static_cast<uint16_t>(ImageViewer::WindowControl::event_menu::FILE_OPEN):
+		{
+			bomb retro([&] {window.set_mode(ImageViewer::WindowControl::display_mode::SHOW); });
 
-	generic_event_handler handling;
-	display disp;	
-	std::vector<std::string> parsed;
-	config conf;
-	auxiliar_data aux_data;
-	transform camera, camera_one_o_one;
-	ALLEGRO_DISPLAY* source_disp = nullptr;
-	thread error_check, update_check;
-	double last_event = 0.0;
+			window.set_mode(ImageViewer::WindowControl::display_mode::LOADING);
 
-	hybrid_memory<texture> file_texture;
-	hybrid_memory<texture> file_texture_gif;
-	hybrid_memory<font> embedded_font;
+			const auto dialog = std::unique_ptr<ALLEGRO_FILECHOOSER, void(*)(ALLEGRO_FILECHOOSER*)>(al_create_native_file_dialog(nullptr, u8"Open a file as image", "*.jpg;*.png;*.bmp;*.jpeg;*.gif;*.*", ALLEGRO_FILECHOOSER_FILE_MUST_EXIST | ALLEGRO_FILECHOOSER_PICTURES), al_destroy_native_file_dialog);
+			const bool got_something = al_show_native_file_dialog(window.get_raw_display().get_raw_display(), dialog.get()) && al_get_native_file_dialog_count(dialog.get()) > 0;
 
-	block image_on_screen;
-	text name_on_screen;
+			if (!got_something) return;
 
-	const color black = color(0.0f, 0.0f, 0.0f, 0.2f);
+			std::string path = al_get_native_file_dialog_path(dialog.get(), 0);
+			index = 0;
 
-	error_check.task_async([&] {
-		if (aux_data.quit || aux_data.got_into_load) {
-			if (aux_data.times_no_quit < max_timeouts) {
-				++aux_data.times_no_quit;
+			auto fp = make_hybrid<file>();
+			if (fp->open(path, file::open_mode_e::READ_TRY)) {
+				cout << IMGVW_STANDARD_START_MAIN << " Loaded from Open: " << path;
+				vec.clear();
+				vec.push_back(std::string(path));
+				conf.write_conf().set("general", "last_seen_list", std::vector<std::string>{ path });
+
+				window.replace_image(std::move(fp), get_final_name(path));
 			}
 			else {
-				disp.set_window_title(fixed_app_name + " | I'm still trying to load... (ESCAPE/X = abort)");
-				aux_data.can_quit_fast = true;
+				std::string __nam = "Could not open file '" + path + "'";
+				al_show_native_message_box(nullptr, "Can't open file", "Failed opening file", __nam.c_str(), nullptr, ALLEGRO_MESSAGEBOX_ERROR);
 			}
 		}
-		else if (aux_data.times_no_quit > 0) {
-			aux_data.times_no_quit = 0;
-			aux_data.can_quit_fast = false;
-			disp.set_window_title(fixed_app_name);
-		}
-	}, thread::speed::INTERVAL, 2.0);
+		break;
+		case static_cast<uint16_t>(ImageViewer::WindowControl::event_menu::FILE_FOLDER_OPEN):
+		{
+			bomb retro([&] {window.set_mode(ImageViewer::WindowControl::display_mode::SHOW); });
 
+			window.set_mode(ImageViewer::WindowControl::display_mode::LOADING);
 
-	const auto func_update_camera = [&] {
-		float prop = 1.0f;
-		if (!file_texture.empty() && !file_texture->empty()) {
-			const double pp = fabs(cos(image_on_screen.get<float>(enum_sprite_float_e::ROTATION))); // 1.0 for 0 or 180
-			if (pp > 0.9) prop = 1.0f * file_texture->get_width() / file_texture->get_height();
-			else prop = 1.0f * file_texture->get_height() / file_texture->get_width();
-		}
-		else if (!file_texture_gif.empty() && !file_texture_gif->empty()) {
-			const double pp = fabs(cos(image_on_screen.get<float>(enum_sprite_float_e::ROTATION))); // 1.0 for 0 or 180
-			if (pp > 0.9) prop = 1.0f * file_texture_gif->get_width() / file_texture_gif->get_height();
-			else prop = 1.0f * file_texture_gif->get_height() / file_texture_gif->get_width();
-		}
-		else return;
+			const auto dialog = std::unique_ptr<ALLEGRO_FILECHOOSER, void(*)(ALLEGRO_FILECHOOSER*)>(al_create_native_file_dialog(nullptr, u8"Search files in path...", "*.*", ALLEGRO_FILECHOOSER_FOLDER), al_destroy_native_file_dialog);
+			const bool got_something = al_show_native_file_dialog(window.get_raw_display().get_raw_display(), dialog.get()) && al_get_native_file_dialog_count(dialog.get()) > 0;
 
-		camera.build_classic_fixed_proportion(disp.get_width(), disp.get_height(), prop, aux_data.zoom);
-		camera_one_o_one.build_classic_fixed_proportion(disp.get_width(), disp.get_height(), 1.0f, 1.0f);
-		camera.apply();
-	};
+			if (!got_something) return;
 
-	const auto quit_fast_f = [&] {
-		al_show_native_message_box(nullptr, "Sorry about that", "I couldn't load in time!", "Sorry about taking so long to open this file. Maybe something bad happened. Please report!", nullptr, ALLEGRO_MESSAGEBOX_ERROR);
-		std::terminate();
-	};
+			std::string path = al_get_native_file_dialog_path(dialog.get(), 0);
 
+			auto pott = get_files_in_folder(path);
 
-	if (!conf.load(common_path + "last.conf")) conf.save_path(common_path + "last.conf");
-	conf.ensure("general", "was_fullscreen", false, config::config_section_mode::SAVE);
-	conf.ensure("general", "smooth_scale", true, config::config_section_mode::SAVE);
-	conf.ensure("general", "width", 1280, config::config_section_mode::SAVE);
-	conf.ensure("general", "height", 720, config::config_section_mode::SAVE);
-	conf.ensure("general", "last_version_check", version_str, config::config_section_mode::SAVE);
-	conf.ensure<std::string>("general", "last_seen_list", {}, config::config_section_mode::SAVE);
-
-	cout << console::color::GREEN << "Working on it...";
-
-	update_check.task_async([&] {check_update_async(aux_data, conf); }, thread::speed::ONCE);
-
-	for (int u = 1; u < argc; u++) {
-		file tempfp;
-		if (!tempfp.open(argv[u], "rb") || tempfp.size() <= 0) {
-			cout << console::color::YELLOW << "Failed to load " << argv[u] << " from arguments list.";
-		}
-		else {
-			cout << console::color::GREEN << "Added '" << argv[u] << "' to the list";
-			parsed.push_back(argv[u]);
-		}
-	}
-
-	if (!parsed.size()) {
-		cout << "No file in arguments list, so loading history...";
-		auto last_list = conf.get_array<std::string>("general", "last_seen_list");
-		parsed = std::move(last_list);
-
-		for (size_t u = 0; u < parsed.size(); u++) {
-			file tempfp;
-			if (!tempfp.open(parsed[u], "rb") || tempfp.size() <= 0) {
-				cout << console::color::YELLOW << "Failed to load " << argv[u] << " from history list.";
-				parsed.erase(parsed.begin() + u--);
+			if (pott.size()) {
+				conf.write_conf().set("general", "last_seen_list", pott);
+				vec.safe([&](std::vector<std::string>& vv) { vv = std::move(pott); });
+				index = 0;
 			}
 			else {
-				cout << console::color::GREEN << "Added '" << parsed[u] << "' to the list";
+				al_show_native_message_box(nullptr, "This folder isn't great...", "Empty folder or no match!", "None of the files found in the folder is a compatible image.", nullptr, ALLEGRO_MESSAGEBOX_ERROR);
+				return;
+			}
+
+			if (vec.size()) {
+				auto fp = make_hybrid<file>();
+				if (fp->open(vec.index(0), file::open_mode_e::READ_TRY))
+					window.replace_image(std::move(fp), get_final_name(vec.index(0)));
 			}
 		}
+		break;
+		case static_cast<uint16_t>(ImageViewer::WindowControl::event_menu::FILE_PASTE_URL):
+		{
+			bomb retro([&] {window.set_mode(ImageViewer::WindowControl::display_mode::SHOW); });
+			window.set_mode(ImageViewer::WindowControl::display_mode::LOADING);
 
-		if (!parsed.size()) {
-			cout << console::color::RED << "Not enough arguments or invalid ones. Please try dragging and dropping the image file onto the app.";
-			
-			al_show_native_message_box(nullptr, "Not enough arguments", "Empty queue!", "No files are saved/valid in history or call. Please try again.", nullptr, ALLEGRO_MESSAGEBOX_ERROR);
-#ifdef _DEBUG
-			std::this_thread::sleep_for(std::chrono::seconds(10));
-#endif
-			return 1;
-		}
-	}
+			const std::string path = window.get_raw_display().clipboard().get_text();
+			if (path.empty()) break;
 
-	conf.set("general", "last_seen_list", parsed);
+			hybrid_memory<file> fp;
 
-	al_set_new_bitmap_flags(al_get_new_bitmap_flags() | (conf.get_as<bool>("general", "smooth_scale") ? (ALLEGRO_MAG_LINEAR | ALLEGRO_MIN_LINEAR) : 0));
-	al_set_new_display_option(ALLEGRO_SAMPLES, 8, ALLEGRO_SUGGEST);
+			if (path.find("http") == 0) {
+				fp = get_URL(path);
 
-	if (!disp.create(
-		display_config()
-		.set_display_mode(
-			display_options()
-			.set_width(conf.get_as<int>("general", "width"))
-			.set_height(conf.get_as<int>("general", "height"))
-		)
-		.set_vsync(true)
-		.set_window_title(fixed_app_name)
-		.set_fullscreen(conf.get_as<bool>("general", "was_fullscreen"))
-		.set_extra_flags(al_get_new_display_flags() | ALLEGRO_RESIZABLE | (conf.get_as<bool>("general", "was_fullscreen") ? ALLEGRO_FULLSCREEN_WINDOW : 0))
-	)) {
-		cout << console::color::RED << "Bad news. Could not create display.";
-		al_show_native_message_box(nullptr, "Trouble creating Display", "Can't create display!", "Please check you drivers or ask for support!", nullptr, ALLEGRO_MESSAGEBOX_ERROR);
-		return -1;
-	}
-
-	if (!(source_disp = disp.get_raw_display())) {
-		cout << console::color::RED << "Bad news. Could not find display.";
-		disp.destroy();
-		al_show_native_message_box(nullptr, "Trouble finding Display", "Can't find created display!", "Please check you drivers or ask for support!", nullptr, ALLEGRO_MESSAGEBOX_ERROR);
-		return -1;
-	}
-
-	icon_fix(disp);
-
-	file_texture = make_hybrid<texture>();
-	file_texture_gif = make_hybrid_derived<texture, texture_gif>();
-
-	disp.hook_event_handler([&](const ALLEGRO_EVENT& ev) {
-		last_event = al_get_time() + event_display_time_relax;
-
-		switch (ev.type) {
-		case ALLEGRO_EVENT_DISPLAY_CLOSE:
-			aux_data.quit = true;
-			if (aux_data.can_quit_fast) {
-				quit_fast_f();
+				if (fp.valid() && fp->is_open()) {
+					cout << IMGVW_STANDARD_START_MAIN << " Loaded from FILE_PASTE_URL (url): " << path;
+					vec.clear();
+					vec.push_back(std::string(path));
+					conf.write_conf().set("general", "last_seen_list", std::vector<std::string>{ path });
+					window.replace_image(std::move(fp), get_final_name(path));
+				}
+				else {
+					std::string __nam = "Could not open URL '" + path + "'";
+					al_show_native_message_box(nullptr, "Can't open URL", "Failed opening URL from clipboard", __nam.c_str(), nullptr, ALLEGRO_MESSAGEBOX_ERROR);
+					return;
+				}
 			}
-			break;
-		case ALLEGRO_EVENT_DISPLAY_RESIZE:
-			conf.set("general", "width", ev.display.width);
-			conf.set("general", "height", ev.display.height);
-			aux_data.update_camera = true;
-			break;
+			else {
+				fp = make_hybrid<file>();
+
+				if (fp->open(path, file::open_mode_e::READ_TRY)) {
+					cout << IMGVW_STANDARD_START_MAIN << " Loaded from FILE_PASTE_URL: " << path;
+					vec.clear();
+					vec.push_back(std::string(path));
+					conf.write_conf().set("general", "last_seen_list", std::vector<std::string>{ path });
+					window.replace_image(std::move(fp), get_final_name(path));
+				}
+				else {
+					auto pott = get_files_in_folder(path);
+
+					if (pott.size()) {
+						conf.write_conf().set("general", "last_seen_list", pott);
+						vec.safe([&](std::vector<std::string>& vv) { vv = std::move(pott); });
+						index = 0;
+					}
+					else {
+						std::string __nam = "Could not open file or folder '" + path + "'";
+						al_show_native_message_box(nullptr, "Can't open file/folder", "Failed opening file/folder from clipboard", __nam.c_str(), nullptr, ALLEGRO_MESSAGEBOX_ERROR);
+						return;
+					}
+
+					if (vec.size()) {
+						auto fp = make_hybrid<file>();
+						if (fp->open(vec.index(0), file::open_mode_e::READ_TRY))
+							window.replace_image(std::move(fp), get_final_name(vec.index(0)));
+					}
+				}
+			}
+		}
+		break;
 		}
 	});
 
-	handling.hook_event_handler([&](const ALLEGRO_EVENT& ev) {
-		last_event = al_get_time() + event_generic_time_relax;
+	cout << IMGVW_STANDARD_START_MAIN << "Hooking mouse events...";
 
-		switch (ev.type) {
-		case ALLEGRO_EVENT_KEY_DOWN:
-			if (ev.keyboard.keycode == ALLEGRO_KEY_SPACE) {
-				if (!aux_data.keyboard_space_triggered) {
-					++aux_data.move_buttons_triggered;
-				}
-				aux_data.keyboard_space_triggered = true;
+	mousectl.hook_event([&](const int id, const mouse::mouse_event& ev) {
+		static float mx_c = 0.0f, my_c = 0.0f;// , my_r = 0.0f; // save state for movement
+			//ma_y_c = 0.0f;// , old_r = 0.0f;// , ma_x_c = 0.0f;// , old_z = 0.0f; // save state for alt
+
+		switch (id) {
+		case ALLEGRO_EVENT_MOUSE_AXES:
+			if (ev.is_button_pressed(0)) {
+				window.set_camera_x(ev.real_posx + mx_c);
+				window.set_camera_y(ev.real_posy + my_c);
 			}
-			else {
-				switch (ev.keyboard.keycode) {
-				case ALLEGRO_KEY_F11:
-					disp.toggle_flag(ALLEGRO_FULLSCREEN_WINDOW);
-					conf.set("general", "was_fullscreen", disp.get_flags() & ALLEGRO_FULLSCREEN_WINDOW);
-					aux_data.update_camera = true;
-					break;
-				case ALLEGRO_KEY_R:
-					image_on_screen.set<float>(enum_sprite_float_e::POS_X, 0.0f);
-					image_on_screen.set<float>(enum_sprite_float_e::POS_Y, 0.0f);
-					image_on_screen.set<float>(enum_sprite_float_e::ROTATION, 0.0f);
-					aux_data.zoom = 1.0f;
-					aux_data.update_camera = true;
-					break;
-				case ALLEGRO_KEY_F:
-				{
-					float fff = image_on_screen.get<float>(enum_sprite_float_e::ROTATION) + static_cast<float>(0.5 * ALLEGRO_PI);
-					if (fff >= static_cast<float>(1.99 * ALLEGRO_PI)) {
-						image_on_screen.set<float>(enum_sprite_float_e::RO_DRAW_PROJ_ROTATION, -static_cast<float>(0.5 * ALLEGRO_PI));
-						fff = 0.0f;
+			else if (ev.got_scroll_event())
+			{
+				if (kbctl.is_key_pressed(ALLEGRO_KEY_ALT)) {
+					window.set_camera_r((ev.scroll_event_id(1) * 0.01f * ALLEGRO_PI) + window.get_camera_r());
+				}
+				else {
+					const float rn = window.get_camera_z();
+					if (rn < 0.25f) {
+						const float val = rn + ev.scroll_event_id(1) * 0.0125f;
+						if (val > 0.0f) window.set_camera_z(val);
 					}
-					image_on_screen.set<float>(enum_sprite_float_e::ROTATION, fff);
-					aux_data.update_camera = true;
-				}
-					break;
-				case ALLEGRO_KEY_ESCAPE:
-					aux_data.quit = true;
-					if (aux_data.can_quit_fast) {
-						quit_fast_f();
+					else if (rn < 0.5f) {
+						window.set_camera_z(rn + ev.scroll_event_id(1) * 0.05f);
 					}
-					break;
-				case ALLEGRO_KEY_LEFT:
-					image_on_screen.set<float>(enum_sprite_float_e::POS_X, 0.0f);
-					image_on_screen.set<float>(enum_sprite_float_e::POS_Y, 0.0f);
-					image_on_screen.set<float>(enum_sprite_float_e::ROTATION, 0.0f);
-					aux_data.zoom = 1.0f;
-					aux_data.update_indexed_image--;
-					aux_data.update_camera = true;
-					break;
-				case ALLEGRO_KEY_RIGHT:
-					image_on_screen.set<float>(enum_sprite_float_e::POS_X, 0.0f);
-					image_on_screen.set<float>(enum_sprite_float_e::POS_Y, 0.0f);
-					image_on_screen.set<float>(enum_sprite_float_e::ROTATION, 0.0f);
-					aux_data.zoom = 1.0f;
-					aux_data.update_indexed_image++;
-					aux_data.update_camera = true;
-					break;
+					else if (rn < 1.5f) {
+						window.set_camera_z(rn + ev.scroll_event_id(1) * 0.10f);
+					}
+					else if (rn < 5.0f) {
+						window.set_camera_z(rn + ev.scroll_event_id(1) * 0.25f);
+					}
+					else if (rn < 25.0f) {
+						window.set_camera_z(rn + ev.scroll_event_id(1) * 1.0f);
+					}
+					else {
+						window.set_camera_z(rn + ev.scroll_event_id(1) * 10.0f);
+					}
 				}
-			}
-			break;
-		case ALLEGRO_EVENT_KEY_UP:
-			if (ev.keyboard.keycode == ALLEGRO_KEY_SPACE) {
-				if (aux_data.keyboard_space_triggered) {
-					--aux_data.move_buttons_triggered;
-				}
-				aux_data.keyboard_space_triggered = false;
 			}
 			break;
 		case ALLEGRO_EVENT_MOUSE_BUTTON_DOWN:
-		{
-			if (ev.mouse.button == 1) {
-				if (!aux_data.mouse_0_triggered) {
-					++aux_data.move_buttons_triggered;
-				}
-				aux_data.mouse_0_triggered = true;
+			if (ev.is_button_pressed(0)) {
+				mx_c = window.get_camera_x() - ev.real_posx;
+				my_c = window.get_camera_y() - ev.real_posy;
 			}
-		}
+			/*else {
+				window.right_click();
+			}*/
 			break;
-		case ALLEGRO_EVENT_MOUSE_BUTTON_UP:
-		{
-			if (ev.mouse.button == 1) {
-				if (aux_data.mouse_0_triggered) {
-					--aux_data.move_buttons_triggered;
-				}
-				aux_data.mouse_0_triggered = false;
-			}
-		}
-			break;
-		case ALLEGRO_EVENT_MOUSE_AXES:
-		{
-			bool any_news = false;
-			if (aux_data.move_buttons_triggered > 0) {
-
-				image_on_screen.set<float>(enum_sprite_float_e::POS_X, image_on_screen.get<float>(enum_sprite_float_e::POS_X) + 0.0005f * ev.mouse.dx / aux_data.zoom);
-				image_on_screen.set<float>(enum_sprite_float_e::POS_Y, image_on_screen.get<float>(enum_sprite_float_e::POS_Y) + 0.0005f * ev.mouse.dy / aux_data.zoom);
-
-				any_news = true;
-
-				al_set_mouse_xy(source_disp, aux_data.mouse_fix_x, aux_data.mouse_fix_y);
-			}
-			else {
-				aux_data.mouse_fix_x = ev.mouse.x;
-				aux_data.mouse_fix_y = ev.mouse.y;
-			}
-
-			if (ev.mouse.dz != 0) {
-				const float rn = aux_data.zoom;
-				if (rn < 0.25f) {
-					const float val = rn + ev.mouse.dz * 0.0125f;
-					if (val > 0.0f) aux_data.zoom = val;
-				}
-				else if (rn < 0.5f) {
-					aux_data.zoom = rn + ev.mouse.dz * 0.05f;
-				}
-				else if (rn < 1.5f) {
-					aux_data.zoom = rn + ev.mouse.dz * 0.10f;
-				}
-				else if (rn < 5.0f) {
-					aux_data.zoom = rn + ev.mouse.dz * 0.25f;
-				}
-				else if (rn < 25.0f) {
-					aux_data.zoom = rn + ev.mouse.dz * 1.0f;
-				}
-				else {
-					aux_data.zoom = rn + ev.mouse.dz * 10.0f;
-				}
-				any_news = true;
-			}
-
-			if (any_news) aux_data.update_camera = true;
-		}
-			break;
-		}
-
-		if (aux_data.move_buttons_triggered == 0) {
-			al_show_mouse_cursor(source_disp);
-		}
-		else {
-			al_hide_mouse_cursor(source_disp);
 		}
 	});
 
-	handling.install_keyboard();
-	handling.install_mouse();
+	cout << IMGVW_STANDARD_START_MAIN << "Hooking keyboard events...";
 
-	image_on_screen.set<float>(enum_sprite_float_e::SCALE_G, 2.0f);
-	image_on_screen.set<float>(enum_sprite_float_e::DRAW_MOVEMENT_RESPONSIVENESS, 0.4f);
+	kbctl.hook_event([&](const keys::key_event& ev) {
+		// common controls
 
-	embedded_font = make_hybrid<font>();
-	if (!embedded_font->create_builtin_font()) {
-		cout << console::color::RED << "Bad news. Could not create font.";
-		al_show_native_message_box(nullptr, "Trouble creating Font!", "Can't create font!", "This is awkward! I've never seen this issue before! Please report!", nullptr, ALLEGRO_MESSAGEBOX_ERROR);
-		disp.destroy();
-		return -1;
-	}
+		if (ev.down) {
+			switch (ev.key_id) {
+			case ALLEGRO_KEY_V:
+			{
+				if (!kbctl.is_key_pressed(ALLEGRO_KEY_LCTRL)) break;
+				// right now has LCTRL + V
 
-	name_on_screen.font_set(embedded_font);
-	name_on_screen.set<float>(enum_sprite_float_e::POS_X, -0.99f);
-	name_on_screen.set<float>(enum_sprite_float_e::POS_Y,  0.89f);
-	name_on_screen.set<float>(enum_sprite_float_e::SCALE_G, 0.1f);
-	name_on_screen.set<float>(enum_sprite_float_e::SCALE_X, 0.4f);
-	name_on_screen.set<int>(enum_text_integer_e::DRAW_ALIGNMENT, ALLEGRO_ALIGN_LEFT);
-	name_on_screen.set<bool>(enum_sprite_boolean_e::DRAW_TRANSFORM_COORDS_KEEP_SCALE, true);
-	name_on_screen.set<safe_data<std::string>>(enum_text_safe_string_e::STRING, std::string("Processing..."));
-	//for (int __c = 1; 255 - 25 * __c > 0; __c++) {
-	//	int ctee = (255 - 25 * __c);
-	//	name_on_screen.shadow_insert(text_shadow(0.0015f * __c, 0.014f * __c, color(ctee / 10, ctee / 10, ctee / 10, ctee)));
-	//}
+				bomb retro([&] {window.set_mode(ImageViewer::WindowControl::display_mode::SHOW); });
+				window.set_mode(ImageViewer::WindowControl::display_mode::LOADING);
 
-	last_event = al_get_time() + event_display_time_relax;
+				const std::string path = window.get_raw_display().clipboard().get_text();
+				if (path.empty()) break;
 
-	while (!aux_data.quit) 
-	{
-		if (last_event < al_get_time()) {
-			std::this_thread::sleep_for(std::chrono::milliseconds(100));
-		}
+				hybrid_memory<file> fp;
 
-		if (aux_data.update_indexed_image != 0 || image_on_screen.texture_size() == 0) {
-			
-			aux_data.got_into_load = true;
+				if (path.find("http") == 0) {
+					fp = get_URL(path);
 
-			image_on_screen.texture_remove_all();
-			name_on_screen.shadow_remove_all();
-			name_on_screen.set<color>(enum_sprite_color_e::DRAW_TINT, color(0.8f, 0.8f, 0.8f, 1.0f));
-			name_on_screen.set<safe_data<std::string>>(enum_text_safe_string_e::STRING, std::string("Loading..."));
-			name_on_screen.shadow_insert(text_shadow(0.003f, 0.015f, color(0.0f, 0.0f, 0.0f, 0.9f)));
-			if ((!file_texture.empty() && !file_texture->empty()) || (!file_texture_gif.empty() && !file_texture_gif->empty())) camera_one_o_one.apply();
-
-			thread parallel_load([&] {
-				{
-					long long cpy_ref = static_cast<long long>(aux_data.update_indexed_image);
-					aux_data.update_indexed_image = 0;
-
-					if (cpy_ref < 0 && static_cast<size_t>(-cpy_ref) > parsed.size()) cpy_ref = 0;
-					if (cpy_ref > 0 && static_cast<size_t>(cpy_ref) > parsed.size()) cpy_ref = 0;
-
-					size_t res = static_cast<size_t>((cpy_ref % static_cast<long long>(parsed.size())) + static_cast<long long>(parsed.size()));
-					aux_data.index = (res + aux_data.index) % parsed.size();
-				}
-
-				size_t old_p = aux_data.index;
-				int loops = 0;
-
-				while (!aux_data.quit) {
-					name_on_screen.set<safe_data<std::string>>(enum_text_safe_string_e::STRING, std::string("Trying to load file #") + std::to_string(aux_data.index) + "...");
-
-					if (old_p == aux_data.index && ++loops > 2) {
-						al_show_native_message_box(nullptr, "Could not load image(s)!", "Something went wrong", "Maybe the file format is not supported? I tried all options you gave me. None worked.", nullptr, ALLEGRO_MESSAGEBOX_ERROR);
-						aux_data.quit = true;
-						break;
-					}
-
-					const std::string& enstr = parsed[aux_data.index];
-					bool is_gif = false;
-					if (enstr.size() > 4) {
-						const std::string ending = ".gif";
-						is_gif = std::equal(ending.rbegin(), ending.rend(), enstr.rbegin());
-					}
-
-					cout << "Loading '" << enstr << "'";
-
-					if (is_gif) {
-						file_texture->destroy();
-
-						auto gif_interf = (texture_gif*)file_texture_gif.get();
-						if (!gif_interf->load(enstr)) aux_data.index = (++aux_data.index >= parsed.size()) ? 0ULL : static_cast<unsigned long long>(aux_data.index);
-						else {
-							image_on_screen.texture_insert(file_texture_gif);
-							break;
-						}
+					if (fp.valid() && fp->is_open()) {
+						cout << IMGVW_STANDARD_START_MAIN << " Loaded from CTRL V (url): " << path;
+						vec.clear();
+						vec.push_back(std::string(path));
+						conf.write_conf().set("general", "last_seen_list", std::vector<std::string>{ path });
+						window.replace_image(std::move(fp), get_final_name(path));
 					}
 					else {
-						file_texture_gif->destroy();
+						std::string __nam = "Could not open URL '" + path + "'";
+						al_show_native_message_box(nullptr, "Can't open URL", "Failed opening URL from clipboard", __nam.c_str(), nullptr, ALLEGRO_MESSAGEBOX_ERROR);
+						return;
+					}
+				}
+				else {
+					fp = make_hybrid<file>();
 
-						if (!file_texture->load(enstr)) aux_data.index = (++aux_data.index >= parsed.size()) ? 0ULL : static_cast<unsigned long long>(aux_data.index);
+					if (fp->open(path, file::open_mode_e::READ_TRY)) {
+						cout << IMGVW_STANDARD_START_MAIN << " Loaded from CTRL V: " << path;
+						vec.clear();
+						vec.push_back(std::string(path));
+						conf.write_conf().set("general", "last_seen_list", std::vector<std::string>{ path });
+						window.replace_image(std::move(fp), get_final_name(path));
+					}
+					else {
+						auto pott = get_files_in_folder(path);
+
+						if (pott.size()) {
+							conf.write_conf().set("general", "last_seen_list", pott);
+							vec.safe([&](std::vector<std::string>& vv) { vv = std::move(pott); });
+							index = 0;
+						}
 						else {
-							image_on_screen.texture_insert(file_texture);
-							break;
+							std::string __nam = "Could not open file or folder '" + path + "'";
+							al_show_native_message_box(nullptr, "Can't open file/folder", "Failed opening file/folder from clipboard", __nam.c_str(), nullptr, ALLEGRO_MESSAGEBOX_ERROR);
+							return;
+						}
+
+						if (vec.size()) {
+							auto fp = make_hybrid<file>();
+							if (fp->open(vec.index(0), file::open_mode_e::READ_TRY))
+								window.replace_image(std::move(fp), get_final_name(vec.index(0)));
 						}
 					}
 				}
-
-				//aux_data.index = aux_data.index;
-				aux_data.got_into_load = false;
-			}, thread::speed::ONCE);
-
-			double rn_t = al_get_time();
-			const float animation_transparency_load = 0.12f;
-			const float animation_transparency_posload = 0.35f;
-			const double min_animation_time = 0.2;
-
-			while (aux_data.got_into_load && !aux_data.quit) {
-				auto time_wait = std::chrono::system_clock::now() + std::chrono::milliseconds(33);
-				color rndcolor(
-					(0.25f + 0.2f * static_cast<float>(cos((al_get_time() - rn_t) * 1.88742))) * animation_transparency_load,
-					(0.25f + 0.2f * static_cast<float>(cos((al_get_time() - rn_t) * 2.59827))) * animation_transparency_load,
-					(0.25f + 0.2f * static_cast<float>(cos((al_get_time() - rn_t) * 1.04108))) * animation_transparency_load,
-					animation_transparency_load
-				);
-				al_draw_filled_rectangle(-9999.0f, -9999.0f, 19998.0f, 19998.0f, rndcolor);
-
-				name_on_screen.draw();
-
-				disp.flip();
-				std::this_thread::sleep_until(time_wait);
 			}
+				break;
+			}
+		}
+		else {
+			switch (ev.key_id) {
+			case ALLEGRO_KEY_F11:
+				window.hide_menu().wait();
 
-			if (aux_data.quit) continue;
+				window->toggle_flag(ALLEGRO_FULLSCREEN_WINDOW).wait();
+				std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
-			//al_convert_bitmaps();
-			func_update_camera();
-			aux_data.update_camera = false;
+				if (!window.is_fullscreen()) window.show_menu().wait(); // if not fullscreen after, show
 
+				conf.write_conf().set("general", "was_fullscreen", window.is_fullscreen());
+
+				window.set_update_camera();
+				break;
+			case ALLEGRO_KEY_R:
+				window.set_camera_x(0.0f);
+				window.set_camera_y(0.0f);
+				window.set_camera_z(1.0f);
+				window.set_camera_r(0.0f);
+				break;
+			case ALLEGRO_KEY_F:
 			{
-				image_on_screen.set<color>(enum_sprite_color_e::DRAW_TINT, color(animation_transparency_posload, animation_transparency_posload, animation_transparency_posload, animation_transparency_posload));
-				image_on_screen.set<bool>(enum_sprite_boolean_e::DRAW_USE_COLOR, true);
-
-				for (const double tt = al_get_time() + min_animation_time; tt > al_get_time();)
-				{
-					auto time_wait = std::chrono::system_clock::now() + std::chrono::milliseconds(33);
-					image_on_screen.draw();
-					disp.flip();
-					std::this_thread::sleep_until(time_wait);
+				float fff = window.get_camera_r() + static_cast<float>(0.5 * ALLEGRO_PI);
+				if (fff >= static_cast<float>(1.99 * ALLEGRO_PI)) {
+					//image_on_screen.set<float>(enum_sprite_float_e::RO_DRAW_PROJ_ROTATION, -static_cast<float>(0.5 * ALLEGRO_PI));
+					fff = 0.0f;
 				}
-
-				image_on_screen.set<bool>(enum_sprite_boolean_e::DRAW_USE_COLOR, false);
+				window.set_camera_r(fff);
 			}
-			
-			last_event = al_get_time() + event_display_time_relax;
+			break;
+			case ALLEGRO_KEY_ESCAPE:
 			{
-				std::string aaa = parsed[aux_data.index];
-				if (aaa.size() > 80) aaa = "..." + aaa.substr(aaa.size() - 77, aaa.size());
-				name_on_screen.set<safe_data<std::string>>(enum_text_safe_string_e::STRING, std::string("[#") + std::to_string(aux_data.index) + "] " + aaa);
+				int answ = al_show_native_message_box(nullptr, "Are you sure you want to quit?", "Are you sure you want to close the app?", "\"ESCAPE\" is a quick way to close this app. You can hit that and ENTER to close fast!", nullptr, ALLEGRO_MESSAGEBOX_OK_CANCEL);
+				if (answ == 1) window.set_quit();
+			}
+				break;
+			case ALLEGRO_KEY_LEFT:
+			{
+				size_t old_indx = index;
+				if (index-- == 0) index = vec.size() - 1;
+				if (old_indx == index) break;
+
+				const auto path = vec.index(index);
+
+				if (path.find("http") == 0) {
+					auto fp = get_URL(path);
+					if (fp.valid() && fp->is_open())
+						window.replace_image(std::move(fp), get_final_name(path));
+				}
+				else {
+					auto fp = make_hybrid<file>();
+					if (fp->open(path, file::open_mode_e::READ_TRY))
+						window.replace_image(std::move(fp), get_final_name(path));
+				}
+			}
+				break;
+			case ALLEGRO_KEY_RIGHT:
+			{
+				size_t old_indx = index;
+				if (++index == vec.size()) index = 0;
+				if (old_indx == index) break;
+
+				const auto path = vec.index(index);
+
+				if (path.find("http") == 0) {
+					auto fp = get_URL(path);
+					if (fp.valid() && fp->is_open())
+						window.replace_image(std::move(fp), get_final_name(path));
+				}
+				else {
+					auto fp = make_hybrid<file>();
+					if (fp->open(path, file::open_mode_e::READ_TRY))
+						window.replace_image(std::move(fp), get_final_name(path));
+				}
+			}
+				break;
+			}
+		}
+	});
+
+	cout << IMGVW_STANDARD_START_MAIN << "Loading first image, if any...";
+
+	if (vec.size()) {
+		const auto path = vec.index(0);
+
+		if (path.find("http") == 0) {
+			auto fp = get_URL(path);
+			if (fp.valid() && fp->is_open())
+				window.replace_image(std::move(fp), get_final_name(path));
+		}
+		else {
+			auto fp = make_hybrid<file>();
+			if (fp->open(path, file::open_mode_e::READ_TRY))
+				window.replace_image(std::move(fp), get_final_name(path));
+		}
+	}
+
+	// check for updates here
+
+	cout << IMGVW_STANDARD_START_MAIN << "Done loading app.";
+
+	while (keep_rolling) std::this_thread::sleep_for(std::chrono::seconds(1));
+
+	cout << IMGVW_STANDARD_START_MAIN << "Closing Image Viewer...";
+
+	window.set_quit();
+
+	return 0;
+}
+
+
+std::vector<std::string> parse_call(const int argc, const char* argv[])
+{
+	std::vector<std::string> lt;
+	for (int a = 1; a < argc; a++)
+	{
+		std::string interp = argv[a];
+		file tester;
+		bool good = (interp.find("http") == 0) || tester.open(interp, file::open_mode_e::READ_TRY);
+		if (good) {
+			cout << IMGVW_STANDARD_START_MAIN << " Added from call: " << interp;
+			lt.push_back(std::move(interp));
+		}
+	}
+	return lt;
+}
+
+std::vector<std::string> recover_conf_files(const ImageViewer::ConfigManager& conf)
+{
+	std::vector<std::string> lt;
+	for (const auto& each : conf.read_conf().get_array<std::string>("general", "last_seen_list"))
+	{
+		file tester;
+		bool good = (each.find("http") == 0) || tester.open(each, file::open_mode_e::READ_TRY);
+		if (good) {
+			cout << IMGVW_STANDARD_START_MAIN << " Added from config: " << each;
+			lt.push_back(each);
+		}
+	}
+	return lt;
+}
+
+std::vector<std::string> get_files_in_folder(const std::string& path)
+{
+	const std::string opts[] = { ".jpg", ".png", ".bmp", ".jpeg", ".gif" };
+	std::vector<std::string> pott;
+
+	std::error_code err; // no except
+	for (const auto& entry : std::filesystem::directory_iterator(path, std::filesystem::directory_options::follow_directory_symlink | std::filesystem::directory_options::skip_permission_denied, err))
+	{
+		if (entry.is_regular_file()) {
+			const std::string each = entry.path().string();
+
+			bool good = false;
+			for (const auto& known : opts) {
+				size_t p = each.rfind(known);
+				if (p == std::string::npos) continue;
+				if (p + known.size() != each.size()) continue;
+				good = true;
+				break;
 			}
 
+			if (!good) continue;
+
+			file tester;
+			good = tester.open(each, file::open_mode_e::READ_TRY);
+			if (!good) continue;
+
+			cout << IMGVW_STANDARD_START_MAIN << " Added from get_files_in_folder: " << entry.path().string();
+			pott.push_back(entry.path().string());
 		}
-		if (aux_data.update_camera) 
-		{
-			aux_data.update_camera = false;
-			func_update_camera();
-		}
-
-		//black.clear_to_this();
-		al_draw_filled_rectangle(-9999.9f, -9999.9f, 9999.9f, 9999.9f, black);
-
-		if (image_on_screen.texture_size()) image_on_screen.draw();
-		else quit_fast_f();
-
-		if (auto timm = ((last_event + show_text_on_screen_for) - al_get_time()); timm > 0.0) {
-			timm *= 1.2;
-			if (timm > 1.0) timm = 1.0;
-
-			name_on_screen.set<color>(enum_sprite_color_e::DRAW_TINT, color(static_cast<float>(timm) * 0.8f, static_cast<float>(timm) * 0.8f, static_cast<float>(timm) * 0.8f, static_cast<float>(timm)));
-			name_on_screen.shadow_remove_all();
-			name_on_screen.shadow_insert(text_shadow(0.003f, 0.015f, color(0.0f, 0.0f, 0.0f, 0.9f * static_cast<float>(timm))));
-
-			camera_one_o_one.apply();
-			name_on_screen.draw();
-			camera.apply();
-		}
-
-		disp.flip();
 	}
 
-	disp.destroy();
-	conf.flush();
-
-	error_check.signal_stop();
-	update_check.signal_stop();
-
-	std::this_thread::sleep_for(std::chrono::seconds(1));
-
-	error_check.force_kill();
-	update_check.force_kill();
+	return pott;
 }
 
-std::string gen_path()
+hybrid_memory<file> get_URL(const std::string& path)
 {
-	al_init();
-	auto path = al_get_standard_path(ALLEGRO_USER_DATA_PATH);
-	std::string path_str = al_path_cstr(path, ALLEGRO_NATIVE_PATH_SEP);
-	if (path_str.empty()) {
-		al_show_native_message_box(nullptr, "Early load error", "Can't find config path!", "Somehow I can't find app data path! Please report!", nullptr, ALLEGRO_MESSAGEBOX_ERROR);
-		throw std::runtime_error("FATAL ERROR CANNOT FIND APPDATA PATH!");
+	if (path.find("http") != 0) return {};
+
+	auto fp = make_hybrid_derived<file, tempfile>();
+
+	if (((tempfile*)fp.get())->open("imgvw_temp_XXXXXX.tmp")) {
+		downloader down;
+		if (!down.get_store(path, [&](const char* buf, const size_t len) { fp->write(buf, len); })) return {};
+
+		fp->flush();
+		return fp;
 	}
-#ifdef _WIN32
-	path_str.pop_back();
-	size_t p = path_str.rfind(ALLEGRO_NATIVE_PATH_SEP);
-	if (p == std::string::npos) {
-		al_show_native_message_box(nullptr, "Early load error", "Can't find config path!", "Somehow the data path I found is invalid! Please report!", nullptr, ALLEGRO_MESSAGEBOX_ERROR);
-		throw std::runtime_error("FATAL ERROR CANNOT FIND APPDATA PATH!");
-	}
-	path_str = path_str.substr(0, p + 1);
-#endif
-	al_destroy_path(path);
-
-	path_str += std::string("Lohk's Studios") + ALLEGRO_NATIVE_PATH_SEP + std::string("Image Viewer") + ALLEGRO_NATIVE_PATH_SEP;
-
-	for (size_t p = 0; p < path_str.size(); p++) {
-		size_t newp = path_str.find(ALLEGRO_NATIVE_PATH_SEP, p);
-		if (newp < p) break; // find out of range?
-		else p = newp;
-
-		std::string tmp = path_str.substr(0, p);
-
-		std::error_code err;
-		if (!std::filesystem::create_directories(tmp, err) && err.value() != 0) {
-			cout << console::color::GOLD << "Create directories error:" << err.message();
-		}
-
-	}
-
-	return path_str;
+	return {};
 }
 
-void icon_fix(const display& disp)
+std::string get_final_name(std::string str)
 {
-	HWND winhandle;
-	HICON icon;
+	if (str.find("http") == 0 || str.size() < 3) return str;
 
-	icon = (HICON)LoadImage(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_ICON1), IMAGE_ICON, 0, 0, LR_DEFAULTCOLOR); //LoadIconA(GetModuleHandle(NULL), "IDI_ICON1");
-	if (icon) {
-		winhandle = al_get_win_window_handle(disp.get_raw_display());
-		SetClassLongPtr(winhandle, GCLP_HICON, (LONG_PTR)icon);
-		SetClassLongPtr(winhandle, GCLP_HICONSM, (LONG_PTR)icon);
-	}
-}
+	size_t p = str.rfind('/');
+	if (p == std::string::npos) p = str.rfind('/');
+	if (p == std::string::npos) return str;
 
-void check_update_async(auxiliar_data& aux, config& conf)
-{
-	cout << console::color::DARK_PURPLE << "Checking version...";
+	if (p < str.size() - 1) p++;
 
-	downloader down;
-	if (!down.get(url_update_check)) {
-		cout << console::color::DARK_PURPLE << "Failed to check version.";
-		return;
-	}
-
-	nlohmann::json gitt = nlohmann::json::parse(down.read(), nullptr, false);
-
-	if (gitt.empty() || gitt.is_discarded()) {
-		cout << console::color::DARK_PURPLE << "Failed to check version.";
-		return;
-	}
-
-	std::string update_url, tag_name, title, body;
-
-	if (auto it = gitt.find("html_url"); it != gitt.end() && it->is_string()) update_url = it->get<std::string>();
-	if (auto it = gitt.find("tag_name"); it != gitt.end() && it->is_string()) tag_name = it->get<std::string>();
-	if (auto it = gitt.find("name"); it != gitt.end() && it->is_string())     title = it->get<std::string>();
-	if (auto it = gitt.find("body"); it != gitt.end() && it->is_string())     body = it->get<std::string>();
-
-	if (update_url.empty() || tag_name.empty() || title.empty() || body.empty()) {
-		cout << console::color::DARK_PURPLE << "Invalid new version body. Skipped.";
-		return;
-	}
-
-	if (conf.get("general", "last_version_check") != tag_name && version_str != tag_name) {
-#ifdef _DEBUG
-		cout << console::color::DARK_PURPLE << "New version! But this is DEBUG, so skip (no save).";
-		return;
-#else
-		cout << console::color::DARK_PURPLE << "New version!";
-		std::this_thread::sleep_for(std::chrono::seconds(3));
-
-		int opt = al_show_native_message_box(nullptr, ("New version detected! (" + tag_name + ") Download (OK) or skip this version (Cancel)?").c_str(), title.c_str(), body.c_str(), nullptr, ALLEGRO_MESSAGEBOX_OK_CANCEL);
-
-		if (opt == 1) { // ask again if user don't properly update
-			ShellExecuteA(0, 0, update_url.c_str(), 0, 0, SW_SHOW);
-			return;
-		}
-#endif
-	}
-	else {
-		cout << console::color::DARK_PURPLE << "No new version [Current: " << version_str << ", Latest: " << tag_name << ", Last notified: " << conf.get("general", "last_version_check") << "]";
-	}
-
-	conf.set("general", "last_version_check", tag_name);
+	return str.substr(p);
 }
