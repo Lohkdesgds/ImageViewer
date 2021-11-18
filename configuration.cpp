@@ -23,7 +23,6 @@ namespace ImageViewer {
 
 		conf.ensure("general", "was_fullscreen", false, config::config_section_mode::SAVE);
 		conf.ensure("general", "smooth_scale", true, config::config_section_mode::SAVE);
-		//conf.ensure("general", "was_rightclick", false, config::config_section_mode::SAVE);
 		conf.ensure("general", "width", 1280, config::config_section_mode::SAVE);
 		conf.ensure("general", "height", 720, config::config_section_mode::SAVE);
 		conf.ensure("general", "last_time_version_check", 0, config::config_section_mode::SAVE);
@@ -32,6 +31,8 @@ namespace ImageViewer {
 		conf.ensure("general", "last_version_check", versioning, config::config_section_mode::SAVE); // tag_name
 
 		conf.ensure<std::string>("general", "last_seen_list", {}, config::config_section_mode::SAVE);
+
+		conf.save_path(conf_path);
 
 		cout << IMGVW_STANDARD_START_CONFIGURATION << console::color::GREEN << "Ready.";
 	}

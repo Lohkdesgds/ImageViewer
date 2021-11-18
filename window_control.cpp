@@ -19,7 +19,6 @@ namespace ImageViewer {
 			return;
 		}
 
-		//if (auto it = gitt.find("html_url"); it != gitt.end() && it->is_string()) update_url = it->get<std::string>();
 		if (auto it = gitt.find("tag_name"); it != gitt.end() && it->is_string()) tag_name = it->get<std::string>();
 
 		if (tag_name.empty()) {
@@ -51,6 +50,24 @@ namespace ImageViewer {
 		__async_task = std::async(std::launch::async, f);
 	}
 
+	void WindowControl::update_fps_limiters()
+	{
+		if (!last_was_gif && (al_get_time() - last_update_ext > deep_sleep_time))
+		{
+			if (disp.get_fps_limit() != deep_sleep_fps)
+				disp.set_fps_limit(deep_sleep_fps);
+		}
+		else if (al_get_time() - last_update_ext > time_sleep)
+		{
+			if (disp.get_fps_limit() != disp.get_economy_fps())
+				disp.set_fps_limit(disp.get_economy_fps());
+		}
+		else if (disp.get_fps_limit() != found_max_fps_of_computer)
+		{
+			disp.set_fps_limit(found_max_fps_of_computer);
+		}
+	}
+
 	void WindowControl::do_draw()
 	{
 		if (update_camera && current_texture.valid() && !current_texture->empty()) {
@@ -62,32 +79,16 @@ namespace ImageViewer {
 			easy.translate(disp.get_width() * 0.5f, disp.get_height() * 0.5f);
 			easy.apply();
 
-			//if (current_texture.valid() && !current_texture->empty()) {
-			//	float transfx = 0.0f, transfy = 0.0f;
-			//	easy.transform_inverse_coords(transfx, transfy);
-			//
-			//	const float dispform = fabsf(transfx * 1.0f / transfy);
-			//	if (dispform > 0.0f && formul > 0.0f)
-			//	{
-			//		if (formul < dispform)
-			//		{
-			//			texture_show_fixed.set<float>(enum_sprite_float_e::SCALE_X, 2.0f * formul);
-			//			texture_show_fixed.set<float>(enum_sprite_float_e::SCALE_Y, 2.0f);
-			//		}
-			//		else
-			//		{
-			//			texture_show_fixed.set<float>(enum_sprite_float_e::SCALE_X, (2.0f));
-			//			texture_show_fixed.set<float>(enum_sprite_float_e::SCALE_Y, (2.0f / formul));
-			//		}
-			//	}
-			//}
-
 			update_camera = false;
 		}
 
 		switch (curr_mode) {
 		case display_mode::LOADING:
 		{
+			if (disp.get_fps_limit() != loading_fps) {
+				disp.set_fps_limit(loading_fps);
+			}
+
 			float curr_transp = animation_transparency_load + static_cast<float>(0.003 * al_get_time());
 			if (curr_transp > 0.05f) curr_transp = 0.05f;
 
@@ -102,6 +103,7 @@ namespace ImageViewer {
 			break;
 		case display_mode::SHOW:
 		{
+			update_fps_limiters();
 			color(0, 0, 0).clear_to_this();
 			texture_show_fixed.draw();
 		}
@@ -139,26 +141,6 @@ namespace ImageViewer {
 				ShellExecuteA(0, 0, url_update_popup.c_str(), 0, 0, SW_SHOW);
 			});
 			break;
-		//case static_cast<uint16_t>(WindowControl::event_menu::TOGGLE_BAR_MODEL):
-		//	if (!no_bar) {
-		//		disp.post_task([this] {
-		//			no_bar = true;
-		//			conf.write_conf().set("general", "was_rightclick", true);
-		//			raw_menu.hide();
-		//			return true;
-		//		});
-		//	}
-		//	else {
-		//		disp.post_task([this] {
-		//			hide_menu();
-		//			rclk.hide();
-		//			raw_menu.show();
-		//			no_bar = false;
-		//			conf.write_conf().set("general", "was_rightclick", false);
-		//			return true;
-		//		});
-		//	}
-		//	break;
 		}
 
 		menu_handlr.csafe([&ev](const std::function<void(menu_event&)> f) {
@@ -177,14 +159,12 @@ namespace ImageViewer {
 
 	void WindowControl::destroy()
 	{
-		raw_menu.hide();
-		//rclk.hide();
-		disp.destroy();
-		quick_quit.csafe([](const std::function<void(void)>& f) {if (f) f(); });
+		conf.write_conf().flush();
+		disp.post_task([this] {disp.destroy(); return true;});
 	}
 
 	WindowControl::WindowControl(ConfigManager& cfg)
-		: conf(cfg), dispev(disp), raw_menu(disp, make_menu()), menuev(raw_menu)//, rclk(disp, make_rmenu(), menu::menu_type::POPUP), menuevrc(rclk)
+		: conf(cfg), dispev(disp), raw_menu(disp, make_menu()), menuev(raw_menu)
 	{
 		cout << IMGVW_STANDARD_START_WINDOWCTL << "Loading WindowManager...";
 
@@ -196,32 +176,32 @@ namespace ImageViewer {
 		texture_show_fixed.set<float>(enum_sprite_float_e::SCALE_X, 2.0f);
 		texture_show_fixed.set<float>(enum_sprite_float_e::SCALE_Y, 2.0f);
 
+		const auto options = Lunaris::get_current_modes();
+		for (const auto& it : options) { if (it.freq > found_max_fps_of_computer) found_max_fps_of_computer = it.freq; }
+		if (found_max_fps_of_computer < min_fps) found_max_fps_of_computer = min_fps;
+
 		disp.create(display_config()
 			.set_display_mode(
 				display_options()
 				.set_width(conf.read_conf().get_as<int>("general", "width"))
 				.set_height(conf.read_conf().get_as<int>("general", "height"))
 			)
-			.set_vsync(false)
+			.set_vsync(true)
 			.set_window_title(get_app_name())
 			.set_fullscreen(conf.read_conf().get_as<bool>("general", "was_fullscreen"))
 			.set_extra_flags(ALLEGRO_OPENGL | ALLEGRO_RESIZABLE | (conf.read_conf().get_as<bool>("general", "was_fullscreen") ? ALLEGRO_FULLSCREEN_WINDOW : 0))
 			.set_auto_economy_mode(false)
 			.set_samples(8)
-			.set_framerate_limit(max_fps)
+			.set_framerate_limit(found_max_fps_of_computer)
 			.set_economy_framerate_limit(min_fps)
 		);
 
-		disp.set_icon_from_icon_resource(IDI_ICON1);
-		
-		//no_bar = conf.read_conf().get_as<bool>("general", "was_rightclick");
+		disp.set_icon_from_icon_resource(IDI_ICON1);		
 
-		disp.hook_draw_function([this](auto&) { do_draw(); });
 		dispev.hook_event_handler([this](display_event& ev) { do_events(ev); });
 		menuev.hook_event_handler([this](menu_event& ev) { do_menu(ev); });
-		//menuevrc.hook_event_handler([this](menu_event& ev) { do_menu(ev); });
 
-		show_menu();
+		if (!conf.read_conf().get_as<bool>("general", "was_fullscreen")) show_menu();
 		nv.load(conf.read_conf());
 
 		if (auto lastt = conf.read_conf().get_as<unsigned long long>("general", "last_time_version_check"); static_cast<unsigned long long>(std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count()) - lastt > delta_time_seconds_next_check) {
@@ -232,18 +212,15 @@ namespace ImageViewer {
 				if (nv.got_data) {
 					if (nv.has_update) { // apply has new version
 						raw_menu.patch_name_of(static_cast<uint16_t>(WindowControl::event_menu::CHECK_UPDATE), "New version: " + nv.tag_name);
-						//rclk.patch_name_of(static_cast<uint16_t>(WindowControl::event_menu::CHECK_UPDATE), "New version: " + nv.tag_name);
 
 						nv.store(conf.write_conf());
 					}
 					else {
 						raw_menu.patch_name_of(static_cast<uint16_t>(WindowControl::event_menu::CHECK_UPDATE), "Up to date");
-						//rclk.patch_name_of(static_cast<uint16_t>(WindowControl::event_menu::CHECK_UPDATE), "Up to date");
 					}
 				}
 				else {
 					raw_menu.patch_name_of(static_cast<uint16_t>(WindowControl::event_menu::CHECK_UPDATE), "Up to date");
-					//rclk.patch_name_of(static_cast<uint16_t>(WindowControl::event_menu::CHECK_UPDATE), "Up to date");
 				}
 			});
 		}
@@ -253,16 +230,13 @@ namespace ImageViewer {
 				conf.write_conf().set("general", "had_update_last_time", false);
 				nv.has_update = false;
 				raw_menu.patch_name_of(static_cast<uint16_t>(WindowControl::event_menu::CHECK_UPDATE), "Updated!");
-				//rclk.patch_name_of(static_cast<uint16_t>(WindowControl::event_menu::CHECK_UPDATE), "Updated!");
 			}
 			else { // apply has new version
 				raw_menu.patch_name_of(static_cast<uint16_t>(WindowControl::event_menu::CHECK_UPDATE), "New version: " + __tmp);
-				//rclk.patch_name_of(static_cast<uint16_t>(WindowControl::event_menu::CHECK_UPDATE), "New version: " + __tmp);
 			}
 		}
 		else {
 			raw_menu.patch_name_of(static_cast<uint16_t>(WindowControl::event_menu::CHECK_UPDATE), "Up to date");
-			//rclk.patch_name_of(static_cast<uint16_t>(WindowControl::event_menu::CHECK_UPDATE), "Up to date");
 		}
 	}
 
@@ -283,8 +257,12 @@ namespace ImageViewer {
 
 	std::future<bool> WindowControl::replace_image(hybrid_memory<file>&& fp, const std::string& newnam)
 	{
+		mode_change_time = al_get_time();
 		curr_mode = display_mode::LOADING;
-		bomb back_to_show([this] {curr_mode = display_mode::SHOW; }); // guaranteed back to show lol
+		bomb back_to_show([this] {
+			mode_change_time = al_get_time();
+			curr_mode = display_mode::SHOW;
+		}); // guaranteed back to show lol
 
 		auto fut = std::async(std::launch::async, [ff = std::move(fp), bmbb = std::move(back_to_show), this, newnam]() mutable {
 			hybrid_memory<texture> test;
@@ -307,6 +285,7 @@ namespace ImageViewer {
 			}
 
 			if (isgif) {
+				last_was_gif = true;
 				const double interv = ((texture_gif*)test.get())->get_interval_shortest();
 				const double fpsmin = interv > 0.0 ? 1.0 / interv : 0.0;
 				if (fpsmin == 0.0) {
@@ -314,7 +293,7 @@ namespace ImageViewer {
 				}
 				else {
 					double resulting_fps = fpsmin;
-					while (resulting_fps > 0.0 && resulting_fps < min_fps && resulting_fps < max_fps) // if anim is like 7.457 fps, min_fps won't be good.
+					while (resulting_fps > 0.0 && resulting_fps < min_fps && resulting_fps < found_max_fps_of_computer) // if anim is like 7.457 fps, min_fps won't be good.
 					{
 						resulting_fps += fpsmin;
 					}
@@ -322,50 +301,20 @@ namespace ImageViewer {
 				}
 			}
 			else {
+				last_was_gif = false;
 				disp.set_economy_fps(min_fps);
 			}
 
-			// good loading texture from now on
-			bool gud = disp.add_run_once_in_drawing_thread([this, &ff, &test]() mutable {
-				current_texture.replace_shared(test.reset_shared());
-				current_file.replace_shared(ff.reset_shared());
-				//transform curr;
-				//curr.build_classic_fixed_proportion_auto(1.0f);
-				//
-				//float transfx = 0.0f, transfy = 0.0f;
-				//curr.transform_inverse_coords(transfx, transfy);
-				//
-				//const float formul = current_texture->get_width() * 1.0f / current_texture->get_height();
-				//const float dispform = fabsf(transfx * 1.0f / transfy);
-				//
-				//if (formul < dispform)
-				//{
-				//	texture_show_fixed.set<float>(enum_sprite_float_e::SCALE_X, 2.0f * formul);
-				//	texture_show_fixed.set<float>(enum_sprite_float_e::SCALE_Y, 2.0f);
-				//}
-				//else	
-				//{
-				//	texture_show_fixed.set<float>(enum_sprite_float_e::SCALE_X, 2.0f * dispform);
-				//	texture_show_fixed.set<float>(enum_sprite_float_e::SCALE_Y, 2.0f * dispform / formul);
-				//}
+			current_texture.replace_shared(test.reset_shared());
+			current_file.replace_shared(ff.reset_shared());
 
-				reset_camera();
-				return true;
-			}).get();
+			reset_camera();
 
-			if (gud) {
-				disp.set_window_title((get_app_name() + " - " + newnam).substr(0, 200));
-			}
-
-			return gud;
+			disp.set_window_title((get_app_name() + " - " + newnam).substr(0, 200));
+			return true;
 		});
 
 		return fut;
-	}
-
-	void WindowControl::on_quit(std::function<void(void)> f)
-	{
-		quick_quit = f;
 	}
 
 	void WindowControl::on_event(std::function<void(display_event&)> f)
@@ -396,7 +345,6 @@ namespace ImageViewer {
 
 	void WindowControl::set_camera_r(const float v)
 	{
-		//texture_show_fixed.set<float>(enum_sprite_float_e::ROTATION, v);
 		camera_rot = v;
 		update_camera = true;
 	}
@@ -418,7 +366,6 @@ namespace ImageViewer {
 
 	float WindowControl::get_camera_r() const
 	{
-		//return texture_show_fixed.get<float>(enum_sprite_float_e::ROTATION);
 		return camera_rot;
 	}
 
@@ -432,12 +379,7 @@ namespace ImageViewer {
 		return disp.post_task([this] { raw_menu.hide(); return true; });
 	}
 
-	//future<bool> WindowControl::right_click()
-	//{
-	//	return disp.post_task([this] { rclk.show(); return true; });
-	//}
-
-	const display_async& WindowControl::get_raw_display() const
+	const display& WindowControl::get_raw_display() const
 	{
 		return disp;
 	}
@@ -457,12 +399,28 @@ namespace ImageViewer {
 		update_camera = true;
 	}
 
-	display_async* WindowControl::operator->()
+	void WindowControl::flip()
+	{
+		do_draw();
+		disp.flip();
+	}
+
+	void WindowControl::yield()
+	{
+		while (!disp.empty()) flip();
+	}
+
+	void WindowControl::wakeup_draw()
+	{
+		last_update_ext = al_get_time();
+	}
+
+	display* WindowControl::operator->()
 	{
 		return &disp;
 	}
 
-	const display_async* WindowControl::operator->() const
+	const display* WindowControl::operator->() const
 	{
 		return &disp;
 	}
@@ -491,13 +449,6 @@ namespace ImageViewer {
 					.set_name("Exit")
 					.set_id(static_cast<uint16_t>(WindowControl::event_menu::FILE_EXIT))
 				),
-			//menu_each_menu()
-			//	.set_name("Toggle bar")
-			//	.set_id(static_cast<uint16_t>(WindowControl::event_menu::TOGGLE_BAR_MODEL_MENU))
-			//	.push(menu_each_default()
-			//		.set_name("Use right click right now")
-			//		.set_id(static_cast<uint16_t>(WindowControl::event_menu::TOGGLE_BAR_MODEL))
-			//	),
 			menu_each_menu()
 				.set_name("Checking for updates...")
 				.set_id(static_cast<uint16_t>(WindowControl::event_menu::CHECK_UPDATE))
@@ -526,66 +477,6 @@ namespace ImageViewer {
 				)
 		};
 	}
-
-	//std::vector<menu_each_menu> make_rmenu()
-	//{
-	//	return {
-	//		menu_each_menu()
-	//			.set_name("File")
-	//			.set_id(static_cast<uint16_t>(WindowControl::event_menu::FILE))
-	//			.push(menu_each_default()
-	//				.set_name("Open")
-	//				.set_id(static_cast<uint16_t>(WindowControl::event_menu::FILE_OPEN))
-	//			)
-	//			.push(menu_each_default()
-	//				.set_name("Open folder")
-	//				.set_id(static_cast<uint16_t>(WindowControl::event_menu::FILE_FOLDER_OPEN))
-	//			)
-	//			.push(menu_each_default()
-	//				.set_name("Open from clipboard (file, folder or URL)")
-	//				.set_id(static_cast<uint16_t>(WindowControl::event_menu::FILE_PASTE_URL))
-	//			)
-	//			.push(menu_each_empty()
-	//			)
-	//			.push(menu_each_default()
-	//				.set_name("Exit")
-	//				.set_id(static_cast<uint16_t>(WindowControl::event_menu::FILE_EXIT))
-	//			),
-	//		//menu_each_menu()
-	//		//	.set_name("Toggle bar")
-	//		//	.set_id(static_cast<uint16_t>(WindowControl::event_menu::TOGGLE_BAR_MODEL_MENU))
-	//		//	.push(menu_each_default()
-	//		//		.set_name("Go back to bar mode")
-	//		//		.set_id(static_cast<uint16_t>(WindowControl::event_menu::TOGGLE_BAR_MODEL))
-	//		//	),
-	//		menu_each_menu()
-	//			.set_name("Checking for updates...")
-	//			.set_id(static_cast<uint16_t>(WindowControl::event_menu::CHECK_UPDATE))
-	//			.push(menu_each_default()
-	//				.set_name("Open releases page")
-	//				.set_id(static_cast<uint16_t>(WindowControl::event_menu::UPDATE_VERSION))
-	//			)
-	//			.push(menu_each_empty()
-	//			)
-	//			.push(menu_each_default()
-	//				.set_name("Current version: " + versioning)
-	//				.set_id(static_cast<uint16_t>(WindowControl::event_menu::CURRENT_VERSION))
-	//				.set_flags(ALLEGRO_MENU_ITEM_DISABLED)
-	//			)
-	//			.push(menu_each_default()
-	//				.set_name(std::string(u8"Build date: ") + __DATE__)
-	//				.set_id(static_cast<uint16_t>(WindowControl::event_menu::RELEASE_DATE))
-	//				.set_flags(ALLEGRO_MENU_ITEM_DISABLED)
-	//			)
-	//			.push(menu_each_empty()
-	//			)
-	//			.push(menu_each_default()
-	//				.set_name("Using " + std::string(LUNARIS_VERSION_SHORT))
-	//				.set_id(static_cast<uint16_t>(WindowControl::event_menu::ABOUT_LUNARIS_SHORT))
-	//				.set_flags(ALLEGRO_MENU_ITEM_DISABLED)
-	//			)
-	//	};
-	//}
 
 	bool is_gif(file& fp)
 	{

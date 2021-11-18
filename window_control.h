@@ -18,12 +18,15 @@ using namespace Lunaris;
 namespace ImageViewer {
 
 	const std::string __gif_default_start = "GIF89a";
-	const double max_fps = 250.0;
-	const double min_fps = 25.0;
-	const float animation_transparency_load = 0.005f;
+	const double max_fps = 240.0;
+	const double loading_fps = 60.0;
+	const double min_fps = 20.0;
+	const double deep_sleep_fps = 2.0;
+	const float animation_transparency_load = 0.008f;
+	const double time_sleep = 0.35;
+	const double deep_sleep_time = 10.0;
 
 	std::vector<menu_each_menu> make_menu();
-	//std::vector<menu_each_menu> make_rmenu();
 
 	class WindowControl {
 	public:
@@ -34,8 +37,6 @@ namespace ImageViewer {
 				FILE_FOLDER_OPEN,
 				FILE_PASTE_URL,
 				FILE_EXIT,
-			//TOGGLE_BAR_MODEL_MENU,
-			//	TOGGLE_BAR_MODEL,
 			CHECK_UPDATE,
 				UPDATE_VERSION,
 				CURRENT_VERSION,
@@ -43,14 +44,11 @@ namespace ImageViewer {
 				RELEASE_DATE
 		};
 	private:
-		display_async disp;
+		display disp;
 		display_event_handler dispev;
 
 		menu raw_menu;
 		menu_event_handler menuev;
-		//menu rclk;
-		//menu_event_handler menuevrc;
-
 
 		ConfigManager& conf;
 
@@ -67,6 +65,9 @@ namespace ImageViewer {
 
 		display_mode curr_mode = display_mode::LOADING;
 		double mode_change_time = 0.0;
+		double last_update_ext = 0.0;
+		bool last_was_gif = false; // disables deep sleep
+		double found_max_fps_of_computer = 0.0;
 
 		hybrid_memory<texture> current_texture;
 		hybrid_memory<file> current_file;
@@ -78,13 +79,13 @@ namespace ImageViewer {
 		std::atomic_bool update_camera = true;
 		float camera_zoom = 1.0f;
 		float camera_rot = 0.0f;
-		double min_fps_on_economy = max_fps;
 
-		safe_data<std::function<void(void)>> quick_quit;
 		safe_data<std::function<void(display_event&)>> events_handlr;
 		safe_data<std::function<void(menu_event&)>> menu_handlr;
 
 		void throw_async(const std::function<void(void)>);
+
+		void update_fps_limiters();
 
 		void do_draw();
 		void do_events(display_event&);
@@ -98,10 +99,9 @@ namespace ImageViewer {
 		~WindowControl();
 
 		void set_mode(const display_mode);
-		// file, is gif?
+		// file, name
 		std::future<bool> replace_image(hybrid_memory<file>&&, const std::string&);
 
-		void on_quit(std::function<void(void)>);
 		void on_event(std::function<void(display_event&)>);
 		void on_menu(std::function<void(menu_event&)>);
 
@@ -122,9 +122,7 @@ namespace ImageViewer {
 		future<bool> show_menu();
 		future<bool> hide_menu();
 
-		//future<bool> right_click();
-
-		const display_async& get_raw_display() const;
+		const display& get_raw_display() const;
 
 		bool is_fullscreen() const;
 
@@ -133,8 +131,13 @@ namespace ImageViewer {
 
 		void set_update_camera();
 
-		display_async* operator->();
-		const display_async* operator->() const;
+		void flip();
+		void yield();
+
+		void wakeup_draw();
+
+		display* operator->();
+		const display* operator->() const;
 	};
 
 	// this will rewind the file lol

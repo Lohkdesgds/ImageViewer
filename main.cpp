@@ -32,6 +32,8 @@ int main(const int argc, const char* argv[])
 	mouse mousectl(window.get_raw_display());
 	keys kbctl;
 
+	window.flip();
+
 	safe_vector<std::string> vec;
 	safe_vector<display_event> evvs;
 
@@ -40,9 +42,10 @@ int main(const int argc, const char* argv[])
 	vec.safe([&](auto& vc) {vc = parse_call(argc, argv); });
 	if (!vec.size()) vec.safe([&](auto& vc) {vc = recover_conf_files(conf); });
 
+	window.flip();
+
 	cout << IMGVW_STANDARD_START_MAIN << "Setting up window quit and stuff...";
 
-	window.on_quit([&] {keep_rolling = false; });
 	window.on_menu([&](menu_event& ev) {
 		switch (ev.get_id()) {
 		case static_cast<uint16_t>(ImageViewer::WindowControl::event_menu::FILE_OPEN):
@@ -171,8 +174,8 @@ int main(const int argc, const char* argv[])
 	cout << IMGVW_STANDARD_START_MAIN << "Hooking mouse events...";
 
 	mousectl.hook_event([&](const int id, const mouse::mouse_event& ev) {
-		static float mx_c = 0.0f, my_c = 0.0f;// , my_r = 0.0f; // save state for movement
-			//ma_y_c = 0.0f;// , old_r = 0.0f;// , ma_x_c = 0.0f;// , old_z = 0.0f; // save state for alt
+		window.wakeup_draw();
+		static float mx_c = 0.0f, my_c = 0.0f; // save state for movement
 
 		switch (id) {
 		case ALLEGRO_EVENT_MOUSE_AXES:
@@ -182,7 +185,7 @@ int main(const int argc, const char* argv[])
 			}
 			else if (ev.got_scroll_event())
 			{
-				if (kbctl.is_key_pressed(ALLEGRO_KEY_ALT)) {
+				if (kbctl.is_key_pressed(ALLEGRO_KEY_LCTRL)) {
 					window.set_camera_r((ev.scroll_event_id(1) * 0.01f * ALLEGRO_PI) + window.get_camera_r());
 				}
 				else {
@@ -214,9 +217,6 @@ int main(const int argc, const char* argv[])
 				mx_c = window.get_camera_x() - ev.real_posx;
 				my_c = window.get_camera_y() - ev.real_posy;
 			}
-			/*else {
-				window.right_click();
-			}*/
 			break;
 		}
 	});
@@ -224,6 +224,7 @@ int main(const int argc, const char* argv[])
 	cout << IMGVW_STANDARD_START_MAIN << "Hooking keyboard events...";
 
 	kbctl.hook_event([&](const keys::key_event& ev) {
+		window.wakeup_draw();
 		// common controls
 
 		if (ev.down) {
@@ -316,7 +317,6 @@ int main(const int argc, const char* argv[])
 			{
 				float fff = window.get_camera_r() + static_cast<float>(0.5 * ALLEGRO_PI);
 				if (fff >= static_cast<float>(1.99 * ALLEGRO_PI)) {
-					//image_on_screen.set<float>(enum_sprite_float_e::RO_DRAW_PROJ_ROTATION, -static_cast<float>(0.5 * ALLEGRO_PI));
 					fff = 0.0f;
 				}
 				window.set_camera_r(fff);
@@ -374,6 +374,8 @@ int main(const int argc, const char* argv[])
 
 	cout << IMGVW_STANDARD_START_MAIN << "Loading first image, if any...";
 
+	window.flip();
+
 	if (vec.size()) {
 		const auto path = vec.index(0);
 
@@ -388,16 +390,15 @@ int main(const int argc, const char* argv[])
 				window.replace_image(std::move(fp), get_final_name(path));
 		}
 	}
-
-	// check for updates here
+	else {
+		window.set_mode(ImageViewer::WindowControl::display_mode::SHOW);
+	}
 
 	cout << IMGVW_STANDARD_START_MAIN << "Done loading app.";
 
-	while (keep_rolling) std::this_thread::sleep_for(std::chrono::seconds(1));
+	window.yield();
 
 	cout << IMGVW_STANDARD_START_MAIN << "Closing Image Viewer...";
-
-	window.set_quit();
 
 	return 0;
 }
