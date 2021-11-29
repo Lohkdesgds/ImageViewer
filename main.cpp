@@ -298,12 +298,12 @@ int main(const int argc, const char* argv[])
 			case ALLEGRO_KEY_F11:
 				window.hide_menu().wait();
 
+				conf.write_conf().set("general", "was_fullscreen", !window.is_fullscreen());
 				window->toggle_flag(ALLEGRO_FULLSCREEN_WINDOW).wait();
 				std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
 				if (!window.is_fullscreen()) window.show_menu().wait(); // if not fullscreen after, show
 
-				conf.write_conf().set("general", "was_fullscreen", window.is_fullscreen());
 
 				window.set_update_camera();
 				break;

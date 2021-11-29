@@ -26,8 +26,6 @@ namespace ImageViewer {
 	const double time_sleep = 0.35;
 	const double deep_sleep_time = 10.0;
 
-	std::vector<menu_each_menu> make_menu();
-
 	class WindowControl {
 	public:
 		enum class display_mode { LOADING, SHOW };
@@ -94,6 +92,8 @@ namespace ImageViewer {
 		void reset_camera();
 
 		void destroy();
+
+		void setup_menu();
 	public:
 		WindowControl(ConfigManager&);
 		~WindowControl();

@@ -163,8 +163,61 @@ namespace ImageViewer {
 		disp.post_task([this] {disp.destroy(); return true;});
 	}
 
+	void WindowControl::setup_menu()
+	{
+		raw_menu.push({
+			menu_each_menu()
+				.set_name("File")
+				.set_id(static_cast<uint16_t>(WindowControl::event_menu::FILE))
+				.push(menu_each_default()
+					.set_name("Open")
+					.set_id(static_cast<uint16_t>(WindowControl::event_menu::FILE_OPEN))
+				)
+				.push(menu_each_default()
+					.set_name("Open folder")
+					.set_id(static_cast<uint16_t>(WindowControl::event_menu::FILE_FOLDER_OPEN))
+				)
+				.push(menu_each_default()
+					.set_name("Open from clipboard (file, folder or URL)")
+					.set_id(static_cast<uint16_t>(WindowControl::event_menu::FILE_PASTE_URL))
+				)
+				.push(menu_each_empty()
+				)
+				.push(menu_each_default()
+					.set_name("Exit")
+					.set_id(static_cast<uint16_t>(WindowControl::event_menu::FILE_EXIT))
+				),
+			menu_each_menu()
+				.set_name("Checking for updates...")
+				.set_id(static_cast<uint16_t>(WindowControl::event_menu::CHECK_UPDATE))
+				.push(menu_each_default()
+					.set_name("Open releases page")
+					.set_id(static_cast<uint16_t>(WindowControl::event_menu::UPDATE_VERSION))
+				)
+				.push(menu_each_empty()
+				)
+				.push(menu_each_default()
+					.set_name("Current version: " + versioning)
+					.set_id(static_cast<uint16_t>(WindowControl::event_menu::CURRENT_VERSION))
+					.set_flags(ALLEGRO_MENU_ITEM_DISABLED)
+				)
+				.push(menu_each_default()
+					.set_name(std::string(u8"Build date: ") + __DATE__)
+					.set_id(static_cast<uint16_t>(WindowControl::event_menu::RELEASE_DATE))
+					.set_flags(ALLEGRO_MENU_ITEM_DISABLED)
+				)
+				.push(menu_each_empty()
+				)
+				.push(menu_each_default()
+					.set_name("Using " + std::string(LUNARIS_VERSION_SHORT))
+					.set_id(static_cast<uint16_t>(WindowControl::event_menu::ABOUT_LUNARIS_SHORT))
+					.set_flags(ALLEGRO_MENU_ITEM_DISABLED)
+				)
+			});
+	}
+
 	WindowControl::WindowControl(ConfigManager& cfg)
-		: conf(cfg), dispev(disp), raw_menu(disp, make_menu()), menuev(raw_menu)
+		: conf(cfg), dispev(disp), raw_menu(), menuev(raw_menu)
 	{
 		cout << IMGVW_STANDARD_START_WINDOWCTL << "Loading WindowManager...";
 
@@ -196,7 +249,10 @@ namespace ImageViewer {
 			.set_economy_framerate_limit(min_fps)
 		);
 
-		disp.set_icon_from_icon_resource(IDI_ICON1);		
+		disp.post_task_on_destroy([this] { current_texture.reset_shared(); });
+		
+		disp.set_icon_from_icon_resource(IDI_ICON1);
+		setup_menu();
 
 		dispev.hook_event_handler([this](display_event& ev) { do_events(ev); });
 		menuev.hook_event_handler([this](menu_event& ev) { do_menu(ev); });
@@ -211,16 +267,16 @@ namespace ImageViewer {
 
 				if (nv.got_data) {
 					if (nv.has_update) { // apply has new version
-						raw_menu.patch_name_of(static_cast<uint16_t>(WindowControl::event_menu::CHECK_UPDATE), "New version: " + nv.tag_name);
+						raw_menu.find_id(static_cast<uint16_t>(WindowControl::event_menu::CHECK_UPDATE)).set_caption("New version: " + nv.tag_name);
 
 						nv.store(conf.write_conf());
 					}
 					else {
-						raw_menu.patch_name_of(static_cast<uint16_t>(WindowControl::event_menu::CHECK_UPDATE), "Up to date");
+						raw_menu.find_id(static_cast<uint16_t>(WindowControl::event_menu::CHECK_UPDATE)).set_caption("Up to date");
 					}
 				}
 				else {
-					raw_menu.patch_name_of(static_cast<uint16_t>(WindowControl::event_menu::CHECK_UPDATE), "Up to date");
+					raw_menu.find_id(static_cast<uint16_t>(WindowControl::event_menu::CHECK_UPDATE)).set_caption("Up to date");
 				}
 			});
 		}
@@ -229,14 +285,14 @@ namespace ImageViewer {
 			if (__tmp == versioning) {
 				conf.write_conf().set("general", "had_update_last_time", false);
 				nv.has_update = false;
-				raw_menu.patch_name_of(static_cast<uint16_t>(WindowControl::event_menu::CHECK_UPDATE), "Updated!");
+				raw_menu.find_id(static_cast<uint16_t>(WindowControl::event_menu::CHECK_UPDATE)).set_caption("Updated!");
 			}
 			else { // apply has new version
-				raw_menu.patch_name_of(static_cast<uint16_t>(WindowControl::event_menu::CHECK_UPDATE), "New version: " + __tmp);
+				raw_menu.find_id(static_cast<uint16_t>(WindowControl::event_menu::CHECK_UPDATE)).set_caption("New version: " + __tmp);
 			}
 		}
 		else {
-			raw_menu.patch_name_of(static_cast<uint16_t>(WindowControl::event_menu::CHECK_UPDATE), "Up to date");
+			raw_menu.find_id(static_cast<uint16_t>(WindowControl::event_menu::CHECK_UPDATE)).set_caption("Up to date");
 		}
 	}
 
@@ -371,12 +427,12 @@ namespace ImageViewer {
 
 	future<bool> WindowControl::show_menu()
 	{
-		return disp.post_task([this] { raw_menu.show(); return true; });
+		return disp.post_task([this] { raw_menu.show(disp); return true; });
 	}
 
 	future<bool> WindowControl::hide_menu()
 	{
-		return disp.post_task([this] { raw_menu.hide(); return true; });
+		return disp.post_task([this] { raw_menu.hide(disp); return true; });
 	}
 
 	const display& WindowControl::get_raw_display() const
@@ -423,59 +479,6 @@ namespace ImageViewer {
 	const display* WindowControl::operator->() const
 	{
 		return &disp;
-	}
-
-	std::vector<menu_each_menu> make_menu()
-	{
-		return {
-			menu_each_menu()
-				.set_name("File")
-				.set_id(static_cast<uint16_t>(WindowControl::event_menu::FILE))
-				.push(menu_each_default()
-					.set_name("Open")
-					.set_id(static_cast<uint16_t>(WindowControl::event_menu::FILE_OPEN))
-				)
-				.push(menu_each_default()
-					.set_name("Open folder")
-					.set_id(static_cast<uint16_t>(WindowControl::event_menu::FILE_FOLDER_OPEN))
-				)
-				.push(menu_each_default()
-					.set_name("Open from clipboard (file, folder or URL)")
-					.set_id(static_cast<uint16_t>(WindowControl::event_menu::FILE_PASTE_URL))
-				)
-				.push(menu_each_empty()
-				)
-				.push(menu_each_default()
-					.set_name("Exit")
-					.set_id(static_cast<uint16_t>(WindowControl::event_menu::FILE_EXIT))
-				),
-			menu_each_menu()
-				.set_name("Checking for updates...")
-				.set_id(static_cast<uint16_t>(WindowControl::event_menu::CHECK_UPDATE))
-				.push(menu_each_default()
-					.set_name("Open releases page")
-					.set_id(static_cast<uint16_t>(WindowControl::event_menu::UPDATE_VERSION))
-				)
-				.push(menu_each_empty()
-				)
-				.push(menu_each_default()
-					.set_name("Current version: " + versioning)
-					.set_id(static_cast<uint16_t>(WindowControl::event_menu::CURRENT_VERSION))
-					.set_flags(ALLEGRO_MENU_ITEM_DISABLED)
-				)
-				.push(menu_each_default()
-					.set_name(std::string(u8"Build date: ") + __DATE__)
-					.set_id(static_cast<uint16_t>(WindowControl::event_menu::RELEASE_DATE))
-					.set_flags(ALLEGRO_MENU_ITEM_DISABLED)
-				)
-				.push(menu_each_empty()
-				)
-				.push(menu_each_default()
-					.set_name("Using " + std::string(LUNARIS_VERSION_SHORT))
-					.set_id(static_cast<uint16_t>(WindowControl::event_menu::ABOUT_LUNARIS_SHORT))
-					.set_flags(ALLEGRO_MENU_ITEM_DISABLED)
-				)
-		};
 	}
 
 	bool is_gif(file& fp)
