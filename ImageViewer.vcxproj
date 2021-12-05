@@ -319,15 +319,10 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="configuration.cpp" />
-    <ClCompile Include="main.cpp" />
-    <ClCompile Include="window_control.cpp" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="shared.h" />
-    <ClInclude Include="configuration.h" />
     <ClInclude Include="resource.h" />
-    <ClInclude Include="window_control.h" />
+    <ClInclude Include="Source\Frame\frame.h" />
+    <ClInclude Include="Source\shared.h" />
+    <ClInclude Include="Source\Window\window.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="ImageViewer.rc" />
@@ -337,6 +332,11 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="Source\Frame\frame.cpp" />
+    <ClCompile Include="Source\main.cpp" />
+    <ClCompile Include="Source\Window\window.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

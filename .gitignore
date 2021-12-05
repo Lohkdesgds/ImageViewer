@@ -343,3 +343,4 @@ healthchecksdb
 *.tlog
 *.recipe
 /VERBOSE_RELEASE
+/Source/__discontinued_v1
