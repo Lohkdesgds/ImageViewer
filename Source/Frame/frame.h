@@ -20,5 +20,7 @@ public:
 	void draw() const;
 	const std::string& name() const;
 
+	bool hit(const int, const int, const display&) const;
+
 	void reset();
 };

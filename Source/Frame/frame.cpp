@@ -60,6 +60,24 @@ const std::string& Frame::name() const
 	return mname;
 }
 
+bool Frame::hit(const int x, const int y, const display& d) const
+{
+	const int center_x = 0.5f * d.get_width(); // offset
+	const int center_y = 0.5f * d.get_height(); // offset
+
+	const float coef_x = d.get_width() * 1.0f / bitmap->get_width(); // scale in x
+	const float coef_y = d.get_height() * 1.0f / bitmap->get_height(); // scale in y
+
+	const float final_scale = ((coef_x < coef_y) ? coef_x : coef_y) * scale; // the smaller scale * scale
+
+	const int left = center_x + posx - 0.5f * bitmap->get_width() * final_scale;
+	const int right = center_x + posx + 0.5f * bitmap->get_width() * final_scale;
+	const int top = center_y + posy - 0.5f * bitmap->get_height() * final_scale;
+	const int bottom = center_y + posy + 0.5f * bitmap->get_height() * final_scale;
+
+	return ((x >= left && x <= right) && (y >= top && y <= bottom));
+}
+
 void Frame::reset()
 {
 	bitmap.reset_this();

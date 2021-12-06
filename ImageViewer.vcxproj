@@ -321,6 +321,7 @@
   <ItemGroup>
     <ClInclude Include="resource.h" />
     <ClInclude Include="Source\Frame\frame.h" />
+    <ClInclude Include="Source\MenuCtl\menuctl.h" />
     <ClInclude Include="Source\shared.h" />
     <ClInclude Include="Source\Window\window.h" />
   </ItemGroup>
@@ -336,6 +337,7 @@
   <ItemGroup>
     <ClCompile Include="Source\Frame\frame.cpp" />
     <ClCompile Include="Source\main.cpp" />
+    <ClCompile Include="Source\MenuCtl\menuctl.cpp" />
     <ClCompile Include="Source\Window\window.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

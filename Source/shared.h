@@ -13,4 +13,4 @@ const std::regex regex_link("http(?:s?)://([\\w_-]+(?:(?:\\.[\\w_-]+)+))([\\w.,@
 const std::string __gif_default_start = "GIF89a";
 const std::string png_format = { (char)137, (char)80, (char)78, (char)71, (char)13, (char)10, (char)26, (char)10 }; // http://www.libpng.org/pub/png/spec/1.2/PNG-Structure.html
 
-const size_t max_item_name_size = 30;
+const size_t max_item_name_size = 50;

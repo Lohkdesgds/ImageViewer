@@ -13,7 +13,9 @@ class Window : public NonCopyable, public NonMovable {
 	display disp;
 	display_event_handler dispev;
 	mouse mous;
-	safe_vector<Frame> frames;
+	safe_vector<Frame> frames; // 0 is on top of the others (and in focus)
+	safe_data<std::function<void(const safe_vector<Frame>&)>> f_frames_update;
+	safe_data<std::function<void(const size_t, Frame&)>> f_rclick;
 
 	void on_disp(const display_event&);
 	void on_mouse(const int, const mouse::mouse_event&);
@@ -25,4 +27,8 @@ public:
 	future<bool> push(const std::string&);
 	void safe(std::function<void(std::vector<Frame>&)>);
 
+	void on_frames_update(std::function<void(const safe_vector<Frame>&)>);
+	void on_right_click(std::function<void(const size_t, Frame&)>);
+
+	const display& get_display() const;
 };

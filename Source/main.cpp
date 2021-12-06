@@ -1,6 +1,7 @@
 #include <Lunaris/all.h>
 
 #include "Window/window.h"
+#include "MenuCtl/menuctl.h"
 
 using namespace Lunaris;
 
@@ -26,8 +27,14 @@ int main(int argc, char* argv[])
 	for (const auto& it : arguments) cout << "- '" << it << "'";
 
 	Window window;
+	MenuCtl menn;
+	
+	for (const auto& it : arguments) window.push(it);// .then([](const bool s) { if (s) { cout << "Success opening file."; } else { cout << "Failed opening file."; } });
 
-	if (arguments.size()) window.push(arguments[0]).then([](const bool s) { if (s) { cout << "Success opening file."; } else { cout << "Failed opening file."; } });
+	window.on_frames_update([&menn, &window](const safe_vector<Frame>& v) { menn.update_frames(v); });
+	window.on_right_click([&menn, &window](const size_t& index, Frame& fr) { menn.show_pop(window.get_display()); });
+
+	menn.show_bar(window.get_display());
 
 	while (window.draw());
 

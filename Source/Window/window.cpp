@@ -18,19 +18,79 @@ void Window::on_mouse(const int id, const mouse::mouse_event& ev)
 	al_get_keyboard_state(&keybst);
 
 	const auto is_key_down = [&](const int kd) { return al_key_down(&keybst, kd); };
-
+		
 	if (ev.is_button_pressed(0))
 	{
-		//cout << "X=" << ev.real_posx << ";Y=" << ev.real_posy;
-		//cout << "DX=" << ev.raw_mouse_event.dx << ";DY=" << ev.raw_mouse_event.dy;
-
 		if (frames.size()) {
-			frames.safe([this, &ev](std::vector<Frame>& v) {
-				for (auto& it : v) {
-					it.posx += ev.raw_mouse_event.dx;
-					it.posy += ev.raw_mouse_event.dy;
+			bool updated = false;
+			frames.safe([this, &ev, &updated](std::vector<Frame>& v) {
+				std::vector<Frame>::iterator it = v.end();
+				
+				for (it = v.begin(); it != v.end(); ++it) {
+					if (it->hit(ev.real_posx, ev.real_posy, disp)) {
+						if (it != v.begin()) {
+							std::iter_swap(it, v.begin());
+							updated = true;
+						}
+						break;
+					}
 				}
+				if (it == v.end()) return;
+
+				it->posx += ev.raw_mouse_event.dx;
+				it->posy += ev.raw_mouse_event.dy;
 			});
+
+			if (updated)
+				f_frames_update.csafe([&](const std::function<void(const safe_vector<Frame>&)>& f) { if (f) f(frames); });
+		}
+	}
+	else if (ev.raw_mouse_event.button == 2 && ev.raw_mouse_event.type == ALLEGRO_EVENT_MOUSE_BUTTON_UP)
+	{
+		frames.safe([this, &ev](std::vector<Frame>& v) {
+			std::vector<Frame>::iterator it = v.end();
+			size_t p = 0;
+
+			for (it = v.begin(); it != v.end(); ++it) {
+				if (it->hit(ev.real_posx, ev.real_posy, disp)) {
+					f_rclick.csafe([&](const std::function<void(const size_t, Frame&)>& f) { if (f) f(p, *it); });
+					break;
+				}
+				++p;
+			}
+			if (it == v.end()) return;
+
+			it->posx += ev.raw_mouse_event.dx;
+			it->posy += ev.raw_mouse_event.dy;
+		});
+
+	}
+	else if (ev.got_scroll_event())
+	{
+		const int ds = ev.scroll_event_id(1);
+		if (ds == 0) return;
+		
+		if (frames.size()) {
+			bool updated = false;
+			frames.safe([this, &ev, &ds, &updated](std::vector<Frame>& v) {
+				std::vector<Frame>::iterator it = v.end();
+				
+				for (it = v.begin(); it != v.end(); ++it) {
+					if (it->hit(ev.real_posx, ev.real_posy, disp)) {
+						if (it != v.begin()) {
+							std::iter_swap(it, v.begin());
+							updated = true;
+						}
+						break;
+					}
+				}
+				if (it == v.end()) return;
+
+				it->scale *= (ds > 0 ? (1.0f / 0.97f) : (0.97f));
+			});
+
+			if (updated)
+				f_frames_update.csafe([&](const std::function<void(const safe_vector<Frame>&)>& f) { if (f) f(frames); });
 		}
 	}
 
@@ -83,7 +143,9 @@ bool Window::draw()
 	color(16, 16, 16).clear_to_this();
 
 	frames.csafe([this](const std::vector<Frame>& v) {
-		for (const auto& it : v) it.draw();
+		for (auto it = v.rbegin(); it != v.rend(); ++it) {
+			it->draw();
+		}
 	});
 
 	disp.flip();
@@ -115,7 +177,7 @@ future<bool> Window::push(const std::string& path)
 
 		return disp.post_task([path, this]() -> bool {
 			bool _gud = false;
-			const std::string nnam = path.size() > max_item_name_size ? path.substr(path.size() - max_item_name_size) : ("..." + path);
+			const std::string nnam = path.size() > max_item_name_size ? ("..." + path.substr(path.size() - max_item_name_size)) : path;
 
 			frames.safe([&](std::vector<Frame>& v) {
 				_gud = v.emplace_back(Frame{}).load([&]()->hybrid_memory<texture> {
@@ -128,6 +190,9 @@ future<bool> Window::push(const std::string& path)
 					return tx;
 				}, nnam);
 			});
+
+			if (_gud) f_frames_update.csafe([&](const std::function<void(const safe_vector<Frame>&)>& f) { if (f) f(frames); });
+
 			return _gud;
 		});
 	}
@@ -162,7 +227,7 @@ future<bool> Window::push(const std::string& path)
 
 		return disp.post_task([is_gif, path, this, ffp = std::move(fp)]() -> bool {
 			bool _gud = false;
-			const std::string nnam = path.size() > max_item_name_size ? path.substr(path.size() - max_item_name_size) : ("..." + path);
+			const std::string nnam = path.size() > max_item_name_size ? ("..." + path.substr(path.size() - max_item_name_size)) : path;
 
 			frames.safe([&](std::vector<Frame>& v) {
 				_gud = v.emplace_back(Frame{}).load([&]()->hybrid_memory<texture> {
@@ -186,6 +251,9 @@ future<bool> Window::push(const std::string& path)
 					}
 				}, nnam);
 			});
+
+			if (_gud) f_frames_update.csafe([&](const std::function<void(const safe_vector<Frame>&)>& f) { if (f) f(frames); });
+
 			return _gud;
 		});
 
@@ -196,7 +264,7 @@ future<bool> Window::push(const std::string& path)
 
 		return disp.post_task([path, this]() -> bool {
 			bool _gud = false;
-			const std::string nnam = path.size() > max_item_name_size ? path.substr(path.size() - max_item_name_size) : ("..." + path);
+			const std::string nnam = path.size() > max_item_name_size ? ("..." + path.substr(path.size() - max_item_name_size)) : path;
 
 			frames.safe([&](std::vector<Frame>& v) {
 				_gud = v.emplace_back(Frame{}).load([&]()->hybrid_memory<texture> {
@@ -209,6 +277,9 @@ future<bool> Window::push(const std::string& path)
 					return tx;
 				}, nnam);
 			});
+
+			if (_gud) f_frames_update.csafe([&](const std::function<void(const safe_vector<Frame>&)>& f) { if (f) f(frames); });
+
 			return _gud;
 		});
 	}
@@ -218,4 +289,19 @@ future<bool> Window::push(const std::string& path)
 void Window::safe(std::function<void(std::vector<Frame>&)> f)
 {
 	frames.safe(f);
+}
+
+void Window::on_frames_update(std::function<void(const safe_vector<Frame>&)> f)
+{
+	f_frames_update = f;
+}
+
+void Window::on_right_click(std::function<void(const size_t, Frame&)> f)
+{
+	f_rclick = f;
+}
+
+const display& Window::get_display() const
+{
+	return disp;
 }

@@ -11,6 +11,9 @@
     <ClInclude Include="Source\Frame\frame.h">
       <Filter>Source\Frame</Filter>
     </ClInclude>
+    <ClInclude Include="Source\MenuCtl\menuctl.h">
+      <Filter>Source\MenuCtl</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="ImageViewer.rc" />
@@ -31,6 +34,9 @@
     <Filter Include="Source\Frame">
       <UniqueIdentifier>{490cdec6-b7fb-4202-8dce-485d89ece6ca}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source\MenuCtl">
+      <UniqueIdentifier>{450227e7-4995-4308-82ce-e7a8fe0c5021}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Source\main.cpp">
@@ -41,6 +47,9 @@
     </ClCompile>
     <ClCompile Include="Source\Frame\frame.cpp">
       <Filter>Source\Frame</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\MenuCtl\menuctl.cpp">
+      <Filter>Source\MenuCtl</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>
