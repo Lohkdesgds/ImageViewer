@@ -31,4 +31,5 @@ public:
 	void on_right_click(std::function<void(const size_t, Frame&)>);
 
 	const display& get_display() const;
+	display& get_display();
 };

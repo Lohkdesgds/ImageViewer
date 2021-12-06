@@ -305,3 +305,8 @@ const display& Window::get_display() const
 {
 	return disp;
 }
+
+display& Window::get_display()
+{
+	return disp;
+}
