@@ -5,13 +5,9 @@
 using namespace Lunaris;
 
 class Frame : public NonCopyable {
-	hybrid_memory<texture> bitmap;
 	std::string mname;
+	std::unique_ptr<block> asblk = std::make_unique<block>();
 public:
-	int posx = 0;
-	int posy = 0;
-	float scale = 1.0f;
-
 	Frame() = default;
 	Frame(Frame&&) noexcept;
 	void operator=(Frame&&) noexcept;
@@ -23,4 +19,14 @@ public:
 	bool hit(const int, const int, const display&) const;
 
 	void reset();
+
+	void recenter_auto();
+	void rescale_auto();
+
+	float& posx();
+	float& posy();
+	float& scale();
+	float& posx() const;
+	float& posy() const;
+	float& scale() const;
 };

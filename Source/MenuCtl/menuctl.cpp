@@ -59,16 +59,28 @@ std::vector<menu_quick> gen_menu_pop()
 			.set_caption("Layers")
 			.set_id(+e_menu_item::RC_LAYERS_ROOT)
 		,
+		//menu_each_menu()
+		//	.set_caption("Rotate")
+		//	.set_id(+e_menu_item::RC_ROTATE)
+		//	.push(menu_each_menu()
+		//		.set_caption("+90 degrees [todo]")
+		//		.set_id(+e_menu_item::RC_ROTATE_RIGHT)
+		//	)
+		//	.push(menu_each_menu()
+		//		.set_caption("-90 degrees [todo]")
+		//		.set_id(+e_menu_item::RC_ROTATE_LEFT)
+		//	)
+		//,
 		menu_each_menu()
-			.set_caption("Rotate")
-			.set_id(+e_menu_item::RC_ROTATE)
+			.set_caption("Transform this")
+			.set_id(+e_menu_item::RC_TRANSFORM)
 			.push(menu_each_menu()
-				.set_caption("+90 degrees [todo]")
-				.set_id(+e_menu_item::RC_ROTATE_RIGHT)
+				.set_caption("Move to center")
+				.set_id(+e_menu_item::RC_CENTER)
 			)
 			.push(menu_each_menu()
-				.set_caption("-90 degrees [todo]")
-				.set_id(+e_menu_item::RC_ROTATE_LEFT)
+				.set_caption("Reset back to start")
+				.set_id(+e_menu_item::RC_RESET)
 			)
 		,
 		menu_each_default().set_caption("Exit").set_id(+e_menu_item::RC_EXIT)
@@ -77,6 +89,8 @@ std::vector<menu_quick> gen_menu_pop()
 
 void MenuCtl::on_menu(menu_event& ev)
 {
+	bomb bmbb([&ev, this] {f_menu_ev.safe([&](std::function<void(menu_event&)>& f) {if (f) f(ev); }); });
+
 	switch (ev.get_id()) {
 	case +e_menu_item::WINDOW_FRAMELESS:
 	case +e_menu_item::RC_WINDOW_FRAMELESS:
@@ -90,7 +104,7 @@ void MenuCtl::on_menu(menu_event& ev)
 				f2.toggle_flags(menu_flags::CHECKED);
 		}
 		disp.toggle_flag(ALLEGRO_FRAMELESS);
-		break;
+		return;
 	case +e_menu_item::WINDOW_NOBAR:
 	case +e_menu_item::RC_WINDOW_NOBAR:
 		if (is_bar_enabled) {
@@ -108,7 +122,7 @@ void MenuCtl::on_menu(menu_event& ev)
 			if (static_cast<bool>(f2.get_flags() & menu_flags::CHECKED) != is_bar_enabled)
 				f2.toggle_flags(menu_flags::CHECKED);
 		}
-		break;
+		return;
 	case +e_menu_item::WINDOW_FULLSCREEN:
 	case +e_menu_item::RC_WINDOW_FULLSCREEN:
 		{
@@ -138,10 +152,17 @@ void MenuCtl::on_menu(menu_event& ev)
 			disp.toggle_flag(ALLEGRO_FULLSCREEN_WINDOW);
 			if (was_barr) disp.post_task([&] { show_bar(); return true; });
 		}
-		break;
+		return;
 	case +e_menu_item::FILE_EXIT_APP:
 	case +e_menu_item::RC_EXIT:
 		disp.destroy();
+		return;
+	}
+
+	if (ev.get_id() < +e_menu_item::__START)
+	{
+		cout << "Layer select #" << ev.get_id() - 1 << ": " << ev.get_caption();
+		f_frame_select.csafe([&](const std::function<void(size_t)>& f) {if (f) f(static_cast<size_t>(ev.get_id() - 1)); });
 	}
 }
 
@@ -169,11 +190,13 @@ void MenuCtl::update_frames(const safe_vector<Frame>& f)
 
 	f.csafe([&](const std::vector<Frame>& fms) {
 
+		if (fms.size() >= +e_menu_item::__START) throw std::out_of_range("Too many layers!");
+
 		int p = 1;
 		for (const auto& ff : fms) {
 
-			fnd1.push(menu_each_default().set_id(static_cast<uint16_t>(p)).set_caption(std::to_string(p) + " > " + ff.name()));
-			fnd2.push(menu_each_default().set_id(static_cast<uint16_t>(p)).set_caption(std::to_string(p) + " > " + ff.name()));
+			fnd1.push(menu_each_default().set_id(p).set_caption(std::to_string(p - 1) + " > " + ff.name()));
+			fnd2.push(menu_each_default().set_id(p).set_caption(std::to_string(p - 1) + " > " + ff.name()));
 
 			cout << "#" << p << " Added " << ff.name() << " to menus.";
 
@@ -202,4 +225,19 @@ void MenuCtl::hide_bar()
 		is_bar_enabled = false;
 		mn_bar.hide(disp.get_raw_display());
 	}
+}
+
+void MenuCtl::on_open(const std::function<void(const std::string&)> f)
+{
+	f_open_file = f;
+}
+
+void MenuCtl::on_frame_select(const std::function<void(size_t)> f)
+{
+	f_frame_select = f; 
+}
+
+void MenuCtl::on_event(const std::function<void(menu_event&)> f)
+{
+	f_menu_ev = f;
 }

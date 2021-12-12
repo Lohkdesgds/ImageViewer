@@ -37,8 +37,8 @@ void Window::on_mouse(const int id, const mouse::mouse_event& ev)
 				}
 				if (it == v.end()) return;
 
-				it->posx += ev.raw_mouse_event.dx;
-				it->posy += ev.raw_mouse_event.dy;
+				it->posx() += ev.raw_mouse_event.dx;
+				it->posy() += ev.raw_mouse_event.dy;
 			});
 
 			if (updated)
@@ -54,14 +54,16 @@ void Window::on_mouse(const int id, const mouse::mouse_event& ev)
 			for (it = v.begin(); it != v.end(); ++it) {
 				if (it->hit(ev.real_posx, ev.real_posy, disp)) {
 					f_rclick.csafe([&](const std::function<void(const size_t, Frame&)>& f) { if (f) f(p, *it); });
+					last_right_click_n = p;
 					break;
 				}
 				++p;
 			}
-			if (it == v.end()) return;
-
-			it->posx += ev.raw_mouse_event.dx;
-			it->posy += ev.raw_mouse_event.dy;
+			if (it == v.end()) {
+				f_rclick.csafe([&](const std::function<void(const size_t, Frame&)>& f) { if (f) { Frame nil; f(static_cast<size_t>(-1), nil); } });
+				last_right_click_n = static_cast<size_t>(-1);
+				return;
+			}
 		});
 
 	}
@@ -86,7 +88,7 @@ void Window::on_mouse(const int id, const mouse::mouse_event& ev)
 				}
 				if (it == v.end()) return;
 
-				it->scale *= (ds > 0 ? (1.0f / 0.97f) : (0.97f));
+				it->scale() *= (ds > 0 ? (1.0f / 0.97f) : (0.97f));
 			});
 
 			if (updated)
@@ -301,6 +303,18 @@ void Window::on_right_click(std::function<void(const size_t, Frame&)> f)
 	f_rclick = f;
 }
 
+void Window::post_right_click(std::function<void(Frame&)> f)
+{
+	disp.post_task([f,this]{
+		frames.safe([&](std::vector<Frame>& vec) {
+			if (f && last_right_click_n < vec.size()) {
+				f(vec[last_right_click_n]);
+			}
+		});
+		return true;
+	});
+}
+
 const display& Window::get_display() const
 {
 	return disp;
@@ -309,4 +323,19 @@ const display& Window::get_display() const
 display& Window::get_display()
 {
 	return disp;
+}
+
+bool Window::put_on_top(const size_t p)
+{
+	bool gud = false;
+	frames.safe([p,&gud](std::vector<Frame>& vec) {
+		if (p >= vec.size()) {
+			gud = false;
+			return;
+		}
+
+		std::iter_swap(vec.begin() + p, vec.begin());
+		gud = true;
+	});
+	return gud;
 }

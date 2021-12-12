@@ -14,7 +14,7 @@ enum class e_menu_item : uint16_t {
 		FILE_OPEN_URL_CLIPBOARD,
 		FILE_EXIT_APP,
 	LAYERS_ROOT,
-		// layers here
+		// 0 to __START-1
 	WINDOW,
 		WINDOW_FRAMELESS,
 		WINDOW_NOBAR,
@@ -26,9 +26,12 @@ enum class e_menu_item : uint16_t {
 		RC_WINDOW_FULLSCREEN,
 	RC_LAYERS_ROOT,
 		// layers here
-	RC_ROTATE,
-		RC_ROTATE_RIGHT,
-		RC_ROTATE_LEFT,
+	//RC_ROTATE,
+	//	RC_ROTATE_RIGHT,
+	//	RC_ROTATE_LEFT,
+	RC_TRANSFORM,
+		RC_CENTER,
+		RC_RESET,
 	RC_EXIT
 
 };
@@ -45,6 +48,10 @@ class MenuCtl : public NonCopyable, public NonMovable {
 	menu mn_pop;
 	generic_event_handler mn_evhlr;
 
+	safe_data<std::function<void(size_t)>> f_frame_select;
+	safe_data<std::function<void(const std::string&)>> f_open_file;
+	safe_data<std::function<void(menu_event&)>> f_menu_ev;
+
 	void on_menu(menu_event&);
 public:
 	MenuCtl(display&);
@@ -54,4 +61,8 @@ public:
 	void show_pop();
 	void show_bar();
 	void hide_bar();
+
+	void on_open(const std::function<void(const std::string&)>);
+	void on_frame_select(const std::function<void(size_t)>);
+	void on_event(const std::function<void(menu_event&)>);
 };

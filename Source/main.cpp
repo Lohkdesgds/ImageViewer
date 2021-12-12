@@ -34,6 +34,17 @@ int main(int argc, char* argv[])
 	window.on_frames_update([&menn, &window](const safe_vector<Frame>& v) { menn.update_frames(v); });
 	window.on_right_click([&menn, &window](const size_t& index, Frame& fr) { menn.show_pop(); });
 
+	menn.on_frame_select([&menn, &window](size_t p) { window.put_on_top(p); });
+	menn.on_event([&](menu_event& mev) {
+		switch (mev.get_id()) {
+		case +e_menu_item::RC_CENTER:
+			window.post_right_click([](Frame& fm) {fm.recenter_auto(); });
+			break;
+		case +e_menu_item::RC_RESET:
+			window.post_right_click([](Frame& fm) {fm.recenter_auto(); fm.rescale_auto(); });
+			break;
+		}
+	});
 	menn.show_bar();
 
 	while (window.draw());
