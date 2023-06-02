@@ -7,11 +7,11 @@
 #include <memory>
 
 constexpr float prop_scale_of_screen = 0.6f;
-constexpr float prop_smoothness_motion = 9.0f;
+constexpr float prop_smoothness_motion = 4.5f;
 constexpr float prop_mouse_transl_factor = 1.25f;
 constexpr float prop_mouse_scale_factor = 0.2f;
 constexpr float prop_mouse_rot_factor = 0.1f;
-constexpr double prop_update_delta = 1.0f / 120;
+constexpr double prop_update_delta = 1.0f / 60;
 constexpr double prop_min_factor_update = 1.0f / 500.0f;
 
 class Window {

@@ -131,6 +131,9 @@
     <ClCompile Include="src\window.cpp">
       <Filter>app\src</Filter>
     </ClCompile>
+    <ClCompile Include="src\configurer.cpp">
+      <Filter>app\src</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="resource.h">
@@ -143,6 +146,9 @@
       <Filter>app\include</Filter>
     </ClInclude>
     <ClInclude Include="include\window.h">
+      <Filter>app\include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\configurer.h">
       <Filter>app\include</Filter>
     </ClInclude>
   </ItemGroup>

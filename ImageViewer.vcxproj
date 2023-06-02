@@ -215,6 +215,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="include\configurer.h" />
     <ClInclude Include="include\updater.h" />
     <ClInclude Include="include\versioning.h" />
     <ClInclude Include="include\window.h" />
@@ -258,6 +259,7 @@
     <ClCompile Include="deps\AllegroCPP\src\vertex.cpp" />
     <ClCompile Include="deps\AllegroCPP\src\video.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="src\configurer.cpp" />
     <ClCompile Include="src\updater.cpp" />
     <ClCompile Include="src\versioning.cpp" />
     <ClCompile Include="src\window.cpp" />
