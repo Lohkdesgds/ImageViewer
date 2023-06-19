@@ -74,8 +74,14 @@ int main(int argc, char* argv[]) // working dir before: $(ProjectDir)
 			has_put_once = put_in_window_from_path(argv[1], ALLEGRO_MEMORY_BITMAP);
 		}
 
+		std::string path = ".";
 
-		for (const auto& p : std::filesystem::directory_iterator{ "." }) {
+		if (const size_t p = find_idx.rfind('\\'); p != std::string::npos) {
+			path = find_idx.substr(0, p);
+			if (path.empty()) path = ".";
+		}
+
+		for (const auto& p : std::filesystem::directory_iterator{ path }) {
 			if (!p.is_regular_file()) continue;
 			std::string pstr = std::filesystem::canonical(p.path()).string();
 			for (auto& i : pstr) if (i == '\\') i = '/';
