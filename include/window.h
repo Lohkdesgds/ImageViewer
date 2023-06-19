@@ -10,9 +10,10 @@ constexpr float prop_scale_of_screen = 0.6f;
 constexpr float prop_smoothness_motion = 4.5f;
 constexpr float prop_mouse_transl_factor = 1.25f;
 constexpr float prop_mouse_scale_factor = 0.2f;
-constexpr float prop_mouse_rot_factor = 0.1f;
+constexpr float prop_mouse_rot_factor = ALLEGRO_PI * 0.0625f;
 constexpr double prop_update_delta = 1.0f / 60;
 constexpr double prop_min_factor_update = 1.0f / 500.0f;
+const std::string prop_base_window_name = "ImageViewer V5";
 
 class Window {
 	struct camera {
@@ -29,9 +30,17 @@ class Window {
 		void rotate(int);
 	};
 
-	std::unique_ptr<AllegroCPP::Display> m_disp;
+	std::shared_ptr<AllegroCPP::Display> m_disp;
+	
 	AllegroCPP::Bitmap m_bmp;
+	AllegroCPP::GIF m_bmp_alt;
+	std::unique_ptr<AllegroCPP::Font> m_font;
+
 	bool m_convert_bmps = false;
+	
+	std::string m_overlay_center;
+	double m_time_to_erase = 0;
+
 	camera m_targ_cam, m_curr_cam;
 
 
@@ -49,10 +58,14 @@ public:
 	~Window();
 
 	void put(AllegroCPP::Bitmap&&, const bool = true);
+	void put(AllegroCPP::GIF&&, const bool = true);
 	void ack_resize();
 
 	camera& cam();
 	bool has_display() const;
+
+	void set_text(const std::string&, double for_sec = 5.0);
+	void set_title(const std::string&);
 
 	operator ALLEGRO_EVENT_SOURCE*() const;
 };

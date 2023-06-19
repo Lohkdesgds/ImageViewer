@@ -22,7 +22,6 @@ Window::camera& Window::camera::operator<<(const camera& o)
 
 	const int cdx = al_get_display_width(al_get_current_display());
 	const int cdy = al_get_display_height(al_get_current_display());
-	
 
 
 	m_transf.identity();
@@ -93,8 +92,9 @@ bool Window::_build()
 	// safe pos
 	if (mpos.second < min_h) mpos.second = min_h;
 
-	m_disp = std::unique_ptr<AllegroCPP::Display>(new AllegroCPP::Display({ dw, dh }, "ImageViewer V5", ALLEGRO_RESIZABLE, mpos));
+	m_disp = std::shared_ptr<AllegroCPP::Display>(new AllegroCPP::Display({ dw, dh }, prop_base_window_name, ALLEGRO_RESIZABLE, mpos));
 	m_disp->set_icon_from_resource(IDI_ICON1);
+	m_font = std::make_unique<AllegroCPP::Font>();
 	return true;
 }
 
@@ -103,7 +103,6 @@ bool Window::_loop()
 	if (!m_disp) return false;
 	if (!m_mutex.run()) return true;
 
-	if (!m_curr_cam.m_need_refresh) al_rest(1.0 / 15);
 	m_disp->clear_to_color(al_map_rgb(127 + 128 * cos(al_get_time()), 25, m_curr_cam.m_need_refresh ? 255 : 25));
 
 	float currscal = 1.0f;
@@ -114,25 +113,63 @@ bool Window::_loop()
 
 		currscal = dx < dy ? dx : dy;
 	}
+	else if (m_bmp_alt) {
+		const float dx = m_disp->get_width() * 1.0f / m_bmp_alt.get_width();
+		const float dy = m_disp->get_height() * 1.0f / m_bmp_alt.get_height();
+
+		currscal = dx < dy ? dx : dy;
+	}
 
 	// smooth insert
 	m_curr_cam << m_targ_cam;
 
 	if (m_convert_bmps) {
 		m_convert_bmps = false;
-		m_bmp.convert(ALLEGRO_MIN_LINEAR | ALLEGRO_MAG_LINEAR | ALLEGRO_VIDEO_BITMAP);
+		al_set_new_bitmap_flags(ALLEGRO_MIN_LINEAR | ALLEGRO_MAG_LINEAR | ALLEGRO_VIDEO_BITMAP);
+		al_convert_bitmaps();
 	}
 
-	m_bmp.draw(0, 0,
-		{
-			{ AllegroCPP::bitmap_rotate_transform{ m_bmp.get_width() * 0.5f, m_bmp.get_height() * 0.5f, 0.0f } },
-			{ AllegroCPP::bitmap_scale{ currscal, currscal }}
-		});
+	if (m_bmp) {
+
+		if (!m_curr_cam.m_need_refresh) al_rest(1.0 / 15);
+
+		m_bmp.draw(0, 0,
+			{
+				{ AllegroCPP::bitmap_rotate_transform{ m_bmp.get_width() * 0.5f, m_bmp.get_height() * 0.5f, 0.0f } },
+				{ AllegroCPP::bitmap_scale{ currscal, currscal }}
+			});
+	}
+	else if (m_bmp_alt) {
+		m_bmp_alt.draw(0, 0,
+			{
+				{ AllegroCPP::bitmap_rotate_transform{ m_bmp.get_width() * 0.5f, m_bmp.get_height() * 0.5f, 0.0f } },
+				{ AllegroCPP::bitmap_scale{ currscal, currscal }}
+			});
+	}
 		//m_curr_cam.m_posx,// + m_disp->get_width() * 0.5f,
 		//m_curr_cam.m_posy, {// + m_disp->get_height() * 0.5f, {
 		//AllegroCPP::bitmap_rotate_transform{ m_bmp.get_width() * 0.5f, m_bmp.get_height() * 0.5f, m_curr_cam.m_rot }
 		////AllegroCPP::bitmap_scale{ m_curr_cam.m_scale* currscal, m_curr_cam.m_scale* currscal }
 	//});
+
+
+	if (m_overlay_center.length()) {
+		if (al_get_time() > m_time_to_erase) {
+			m_overlay_center.clear();
+		}
+		else {
+			double factor = m_time_to_erase - al_get_time();
+			if (factor > 2.0) factor = 2.0;
+			if (factor < 0.0) factor = 0.0;
+			factor /= 2.0;
+
+			AllegroCPP::Transform t;
+			t.scale({ 2.0f, 2.0f });
+			t.use();
+			m_font->draw({ m_disp->get_width() * 0.25f + 2, 6.0f }, m_overlay_center, al_map_rgba_f(0.0f, 0.0f, 0.0f, static_cast<float>(factor)), AllegroCPP::text_alignment::CENTER);
+			m_font->draw({ m_disp->get_width() * 0.25f, 4.0f }, m_overlay_center, al_map_rgba_f(1.0f, 1.0f, 1.0f, static_cast<float>(factor)), AllegroCPP::text_alignment::CENTER);
+		}
+	}
 
 	m_disp->flip();
 
@@ -176,6 +213,16 @@ void Window::put(AllegroCPP::Bitmap&& b, const bool reset_cam)
 {
 	Lunaris::fast_lock_guard l(m_mutex);
 	m_bmp = std::move(b);
+	m_bmp_alt.destroy();
+	m_convert_bmps = true;
+	if (reset_cam) cam().reset();
+}
+
+void Window::put(AllegroCPP::GIF&& b, const bool reset_cam)
+{
+	Lunaris::fast_lock_guard l(m_mutex);
+	m_bmp.destroy();
+	m_bmp_alt = std::move(b);
 	m_convert_bmps = true;
 	if (reset_cam) cam().reset();
 }
@@ -194,6 +241,19 @@ bool Window::has_display() const
 {
 	return m_disp.get();
 }
+
+void Window::set_text(const std::string& s, double for_sec)
+{
+	Lunaris::fast_lock_guard l(m_mutex);
+	m_overlay_center = s;
+	m_time_to_erase = for_sec + al_get_time();
+}
+
+void Window::set_title(const std::string& s)
+{
+	m_disp->set_title(prop_base_window_name + s);
+}
+
 
 Window::operator ALLEGRO_EVENT_SOURCE* () const
 {

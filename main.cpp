@@ -8,13 +8,16 @@
 
 #include <shellapi.h>
 #include <chrono>
+#include <variant>
 
 using namespace Lunaris;
 
 const uint64_t launch_time_utc = std::chrono::duration_cast<std::chrono::duration<std::uint64_t>>(std::chrono::utc_clock().now().time_since_epoch()).count();
 const uint64_t launch_time_delta = 7200; // every 2 hours?
 
-int main(int argc, char* argv[])
+constexpr auto load_bitmap_auto = [](const std::string& p, int mode) -> std::variant<AllegroCPP::Bitmap, AllegroCPP::GIF, bool> {try { AllegroCPP::Bitmap tst(p, mode); if (tst.valid()) return tst; } catch (...) { try { AllegroCPP::GIF tg(p, mode); if (tg.valid()) return tg; } catch (...) { return false; } } return false; };
+
+int main(int argc, char* argv[]) // working dir before: $(ProjectDir)
 {
 	auto& gconf = g_conf();
 
@@ -45,8 +48,6 @@ int main(int argc, char* argv[])
 	}
 
 	g_save_conf();
-	
-	
 
 	
 
@@ -60,59 +61,42 @@ int main(int argc, char* argv[])
 		AllegroCPP::Thread self;
 	} dat;
 	
+	const auto put_in_window_from_path = [&window](const std::string& p, int mode) {auto bmp = load_bitmap_auto(p, mode); if (std::holds_alternative<AllegroCPP::Bitmap>(bmp)) { window.put(std::move(std::get<AllegroCPP::Bitmap>(bmp))); return true; } else if (std::holds_alternative<AllegroCPP::GIF>(bmp)) { window.put(std::move(std::get<AllegroCPP::GIF>(bmp))); return true; } return false;  };
+	
 
-	dat.self.create([&dat, &argc, &argv] {
+	dat.self.create([&dat, &argc, &argv, &window, &put_in_window_from_path] {
 		const std::string find_idx = argc > 1 ? argv[1] : "";
+		window.set_text("Loading folder in the background...");
 
-		for (const auto& p : std::filesystem::directory_iterator{"."})
-		{
-			if (!p.is_regular_file()) continue;
+		bool has_put_once = false;
 
-			std::string pstr = std::filesystem::canonical(p.path()).string();
-			for (auto& i : pstr) if (i == '\\') i = '/';
-
-			AllegroCPP::Bitmap tst;
-
-			try {
-				tst = AllegroCPP::Bitmap(pstr, ALLEGRO_MEMORY_BITMAP);
-
-				if (tst.valid()) {
-					cout << console::color::LIGHT_PURPLE << "+ " << pstr;
-					if (!find_idx.empty() && pstr == find_idx) dat.index = dat.items_in_folder.size();
-					dat.items_in_folder.push_back(pstr);
-				}
-			}
-			catch (const std::exception& e) {
-				cout << console::color::YELLOW << "WARN '" << e.what() << "' > " << pstr;
-			}
-			catch (...) {
-				cout << console::color::YELLOW << "WARN > " << pstr;
-			}
-
-			if (!tst.valid()) {
-				try {
-					AllegroCPP::GIF tstgif(pstr);
-					
-					if (tstgif.valid()) {
-						cout << console::color::GREEN << "+ " << pstr;
-						if (!find_idx.empty() && pstr == find_idx) dat.index = dat.items_in_folder.size();
-						dat.items_in_folder.push_back(pstr);
-					}
-					else {
-						cout << console::color::RED << "- " << pstr;
-					}
-				}
-				catch (const std::exception& e) {
-					cout << console::color::YELLOW << "WARN '" << e.what() << "' - " << pstr;
-				}
-				catch (...) {
-					cout << console::color::YELLOW << "WARN - " << pstr;
-				}
-			}
-
+		if (argc > 1 && strlen(argv[1]) > 0) {
+			has_put_once = put_in_window_from_path(argv[1], ALLEGRO_MEMORY_BITMAP);
 		}
 
 
+		for (const auto& p : std::filesystem::directory_iterator{ "." }) {
+			if (!p.is_regular_file()) continue;
+			std::string pstr = std::filesystem::canonical(p.path()).string();
+			for (auto& i : pstr) if (i == '\\') i = '/';
+
+
+			if (!find_idx.empty() && pstr == find_idx) {
+				dat.index = dat.items_in_folder.size();
+			}
+
+			if (!has_put_once) {
+				has_put_once = put_in_window_from_path(pstr, ALLEGRO_MEMORY_BITMAP);
+				dat.index = dat.items_in_folder.size();
+			}
+
+			dat.items_in_folder.push_back(pstr);
+		}
+
+		window.set_text("Found possibly " + std::to_string(dat.items_in_folder.size()) + " images in this folder.");
+		//al_rest(5.0);
+		//window.set_text("");
+		dat.ready = true;
 		return false;
 	}, AllegroCPP::Thread::Mode::NORMAL);
 
@@ -122,10 +106,41 @@ int main(int argc, char* argv[])
 	ev_qu << AllegroCPP::Event_mouse();
 	ev_qu << AllegroCPP::Event_keyboard();
 
-	{
-		AllegroCPP::Bitmap bmp(argc > 1 ? argv[1] : "test.jpg", ALLEGRO_MEMORY_BITMAP);
-		window.put(std::move(bmp), true);
-	}
+	//{
+	//	AllegroCPP::Bitmap bmp(argc > 1 ? argv[1] : "test.jpg", ALLEGRO_MEMORY_BITMAP);
+	//	window.put(std::move(bmp), true);
+	//}
+
+	const auto func_adv_back = [&](int dir) {
+		if (dir >= 0) {
+			window.set_text("Loading image, please wait...");
+			for (size_t p = 0; p < dat.items_in_folder.size(); ++p) {
+				if (++dat.index >= dat.items_in_folder.size()) dat.index = 0;
+
+				window.set_text("Loading " + std::to_string(dat.index + 1) + "/" + std::to_string(dat.items_in_folder.size()) + "...", 1e20);
+
+				if (put_in_window_from_path(dat.items_in_folder[dat.index], ALLEGRO_MEMORY_BITMAP)) {
+					window.set_text("Loaded " + std::to_string(dat.index + 1) + "/" + std::to_string(dat.items_in_folder.size()) + ".");
+					break;
+				}
+
+			}
+		}
+		else {
+			window.set_text("Loading image, please wait...");
+			for (size_t p = 0; p < dat.items_in_folder.size(); ++p) {
+				if (dat.index-- == 0) dat.index = dat.items_in_folder.size() - 1;
+
+				window.set_text("Loading " + std::to_string(dat.index + 1) + "/" + std::to_string(dat.items_in_folder.size()) + "...", 1e20);
+
+				if (put_in_window_from_path(dat.items_in_folder[dat.index], ALLEGRO_MEMORY_BITMAP)) {
+					window.set_text("Loaded " + std::to_string(dat.index + 1) + "/" + std::to_string(dat.items_in_folder.size()) + ".");
+					break;
+				}
+			}
+		}
+	};
+	
 
 
 	for (bool run = true; run;)
@@ -134,6 +149,8 @@ int main(int argc, char* argv[])
 
 		switch (ev.get().type) {
 		case ALLEGRO_EVENT_DISPLAY_CLOSE:
+			window.set_text("Closing in a second.");
+			al_rest(1.0);
 			cout << console::color::YELLOW << "Close";
 			run = false;
 			continue;
@@ -161,7 +178,22 @@ int main(int argc, char* argv[])
 			break;
 		case ALLEGRO_EVENT_KEY_DOWN:
 			ctl_down |= (ev.get().keyboard.keycode == ALLEGRO_KEYMOD_CTRL);
-			if (ev.get().keyboard.keycode == ALLEGRO_KEY_R) window.cam().reset();
+
+			switch (ev.get().keyboard.keycode) {
+			case ALLEGRO_KEY_R:
+				window.cam().reset();
+				break;
+			case ALLEGRO_KEY_RIGHT:
+				if (!dat.ready) break;
+				dat.self.stop();
+				dat.self.create([&] {func_adv_back(1); return false; }, AllegroCPP::Thread::Mode::NORMAL);
+				break;
+			case ALLEGRO_KEY_LEFT:
+				if (!dat.ready) break;
+				dat.self.stop();
+				dat.self.create([&] {func_adv_back(-1); return false; }, AllegroCPP::Thread::Mode::NORMAL);
+				break;
+			}
 			break;
 		case ALLEGRO_EVENT_KEY_UP:
 			if (ev.get().keyboard.keycode == ALLEGRO_KEYMOD_CTRL) ctl_down = false;
