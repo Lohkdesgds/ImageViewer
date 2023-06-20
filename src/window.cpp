@@ -1,9 +1,13 @@
 #include "../include/window.h"
+#include "../include/configurer.h"
 #include "../icon/app.h"
 
 Window::camera& Window::camera::operator<<(const camera& o)
 {
-	if (m_last_upd_cam > al_get_time()) return *this;
+	if (m_last_upd_cam > al_get_time()) {
+		m_transf.use();
+		return *this;
+	}
 	m_last_upd_cam = al_get_time() + prop_update_delta;
 
 	const float plus = (prop_smoothness_motion + 1.0f);
@@ -22,7 +26,6 @@ Window::camera& Window::camera::operator<<(const camera& o)
 
 	const int cdx = al_get_display_width(al_get_current_display());
 	const int cdy = al_get_display_height(al_get_current_display());
-
 
 	m_transf.identity();
 	m_transf.scale({ m_scale, m_scale });
@@ -65,36 +68,50 @@ void Window::camera::rotate(int r)
 
 bool Window::_build()
 {
-	int dw = 1280, dh = 720;
-	int min_h = 20;
-
 	if (!al_is_system_installed()) al_init();
-	auto mpos = AllegroCPP::Mouse_cursor::get_pos();
-	
-	for (int p = 0; p < al_get_num_video_adapters(); ++p)
-	{
-		AllegroCPP::Monitor_info mi(p);
 
-		if (
-			mpos.first >= mi.m_info.x1 && mpos.first < mi.m_info.x2 &&
-			mpos.second >= mi.m_info.y1 && mpos.second < mi.m_info.y2
-		) {
-			dw = mi.get_width() * prop_scale_of_screen;
-			dh = mi.get_height() * prop_scale_of_screen;
-			min_h = mi.m_info.y1 + 20;
-			break;
-		}
+	auto& gconf = g_conf();
+
+	int suggested_ss[2]{ 0,0 };
+	if (auto c = gconf.get("general", "screen_width"); !c.empty()) suggested_ss[0] = std::atoi(c.c_str());
+	if (auto c = gconf.get("general", "screen_height"); !c.empty()) suggested_ss[1] = std::atoi(c.c_str());
+
+	auto di = _get_target_display_info();
+
+	if (suggested_ss[0] >= prop_minimum_screen_size[0]) {
+		di.size[0] = suggested_ss[0];
+	}
+	else {
+		di.size[0] *= prop_scale_of_screen;
 	}
 
-	mpos.first -= dw * 0.5f;
-	mpos.second -= dh * 0.5f;
+	if (suggested_ss[1] >= prop_minimum_screen_size[1]) {
+		di.size[1] = suggested_ss[1];
+	}
+	else {
+		di.size[1] *= prop_scale_of_screen;
+	}
+
+
+	auto mpos = AllegroCPP::Mouse_cursor::get_pos();
+
+	mpos.first -= di.size[0] * 0.5f;
+	mpos.second -= di.size[1] * 0.5f;
 
 	// safe pos
-	if (mpos.second < min_h) mpos.second = min_h;
+	if (mpos.second < di.min_h) mpos.second = di.min_h;
 
-	m_disp = std::shared_ptr<AllegroCPP::Display>(new AllegroCPP::Display({ dw, dh }, prop_base_window_name, ALLEGRO_RESIZABLE, mpos));
+	al_set_new_display_option(ALLEGRO_SAMPLE_BUFFERS, 1, ALLEGRO_SUGGEST);
+	al_set_new_display_option(ALLEGRO_SAMPLES, 8, ALLEGRO_SUGGEST);
+
+	m_disp = std::shared_ptr<AllegroCPP::Display>(new AllegroCPP::Display({ di.size[0], di.size[1] }, prop_base_window_name, ALLEGRO_RESIZABLE, mpos));
 	m_disp->set_icon_from_resource(IDI_ICON1);
 	m_font = std::make_unique<AllegroCPP::Font>();
+
+	m_evqu << m_timer;
+	m_evqu << m_evcustom;
+
+	m_timer.start();
 	return true;
 }
 
@@ -103,7 +120,16 @@ bool Window::_loop()
 	if (!m_disp) return false;
 	if (!m_mutex.run()) return true;
 
-	m_disp->clear_to_color(al_map_rgb(127 + 128 * cos(al_get_time()), 25, m_curr_cam.m_need_refresh ? 255 : 25));
+	if (m_task) {
+		m_task();
+		m_task = {};
+	}
+
+	m_evqu.wait_for_event(0.2f); // it is timer for sure.
+	const double timer_speed_now = m_timer.get_speed();
+
+	//m_disp->clear_to_color(al_map_rgb(127 + 128 * cos(al_get_time()), 25, m_curr_cam.m_need_refresh ? 255 : 25));
+	m_disp->clear_to_color(al_map_rgb(25, 25, 25));
 
 	float currscal = 1.0f;
 
@@ -125,13 +151,17 @@ bool Window::_loop()
 
 	if (m_convert_bmps) {
 		m_convert_bmps = false;
-		al_set_new_bitmap_flags(ALLEGRO_MIN_LINEAR | ALLEGRO_MAG_LINEAR | ALLEGRO_VIDEO_BITMAP);
+		al_set_new_bitmap_flags(ALLEGRO_MIN_LINEAR | ALLEGRO_VIDEO_BITMAP);
+		al_set_new_bitmap_format(ALLEGRO_PIXEL_FORMAT_ANY);
 		al_convert_bitmaps();
 	}
 
 	if (m_bmp) {
 
-		if (!m_curr_cam.m_need_refresh) al_rest(1.0 / 15);
+		if (!m_curr_cam.m_need_refresh) {
+			if (timer_speed_now != prop_timer_min_refresh_rate) m_timer.set_speed(prop_timer_min_refresh_rate);
+		}
+		else if (timer_speed_now != prop_timer_max_refresh_rate) m_timer.set_speed(prop_timer_max_refresh_rate);
 
 		m_bmp.draw(0, 0,
 			{
@@ -140,17 +170,21 @@ bool Window::_loop()
 			});
 	}
 	else if (m_bmp_alt) {
+		const double gif_fps = (m_bmp_alt.get_interval_shortest() > 0.0) ? (1.0 / m_bmp_alt.get_interval_shortest()) : prop_timer_min_refresh_rate;
+
+		if (!m_curr_cam.m_need_refresh) {
+			if (timer_speed_now != gif_fps) {
+				m_timer.set_speed(1.0 / gif_fps);
+			}
+		}
+		else if (timer_speed_now != prop_timer_max_refresh_rate) m_timer.set_speed(prop_timer_max_refresh_rate);
+
 		m_bmp_alt.draw(0, 0,
 			{
-				{ AllegroCPP::bitmap_rotate_transform{ m_bmp.get_width() * 0.5f, m_bmp.get_height() * 0.5f, 0.0f } },
+				{ AllegroCPP::bitmap_rotate_transform{ m_bmp_alt.get_width() * 0.5f, m_bmp_alt.get_height() * 0.5f, 0.0f } },
 				{ AllegroCPP::bitmap_scale{ currscal, currscal }}
 			});
 	}
-		//m_curr_cam.m_posx,// + m_disp->get_width() * 0.5f,
-		//m_curr_cam.m_posy, {// + m_disp->get_height() * 0.5f, {
-		//AllegroCPP::bitmap_rotate_transform{ m_bmp.get_width() * 0.5f, m_bmp.get_height() * 0.5f, m_curr_cam.m_rot }
-		////AllegroCPP::bitmap_scale{ m_curr_cam.m_scale* currscal, m_curr_cam.m_scale* currscal }
-	//});
 
 
 	if (m_overlay_center.length()) {
@@ -178,22 +212,63 @@ bool Window::_loop()
 
 void Window::_destroy()
 {
+	auto& gconf = g_conf();
+
+	if (m_was_fullscreen) { // is fullscreen
+		gconf.set("general", "screen_width", std::to_string(m_last_display_before_fullscreen.size[0]));
+		gconf.set("general", "screen_height", std::to_string(m_last_display_before_fullscreen.size[1]));
+	}
+	else {
+		gconf.set("general", "screen_width", std::to_string(m_disp->get_width()));
+		gconf.set("general", "screen_height", std::to_string(m_disp->get_height()));
+	}
+
+	g_save_conf();
+
 	m_disp.reset();
+	m_evqu.remove_source(m_timer);
+	m_timer.stop();
 }
 
 bool Window::_manage()
 {
-	switch (stage) {
+	switch (m_stage) {
 	case 0:
-		++stage;
+		++m_stage;
 		return _build();
 	case 1:
 		return _loop();
 	default:
 		_destroy();
-		stage = 0;
+		m_stage = 0;
 		return false;
 	}
+}
+
+Window::display_info Window::_get_target_display_info()
+{
+	Window::display_info di;
+
+	auto mpos = AllegroCPP::Mouse_cursor::get_pos();
+
+	for (int p = 0; p < al_get_num_video_adapters(); ++p)
+	{
+		AllegroCPP::Monitor_info mi(p);
+
+		if (
+			mpos.first >= mi.m_info.x1 && mpos.first < mi.m_info.x2 &&
+			mpos.second >= mi.m_info.y1 && mpos.second < mi.m_info.y2
+			) {
+			di.size[0] = mi.get_width();
+			di.size[1] = mi.get_height();
+			di.offset[0] = mi.m_info.x1;
+			di.offset[1] = mi.m_info.y1;
+			di.min_h = mi.m_info.y1 + 20;
+			break;
+		}
+	}
+
+	return di;
 }
 
 Window::Window()
@@ -204,7 +279,7 @@ Window::Window()
 Window::~Window()
 {
 	Lunaris::fast_lock_guard l(m_mutex); // force stop
-	stage = 2; // end
+	m_stage = 2; // end
 
 	m_thr.join();
 }
@@ -229,12 +304,29 @@ void Window::put(AllegroCPP::GIF&& b, const bool reset_cam)
 
 void Window::ack_resize()
 {
-	if (m_disp) m_disp->acknowledge_resize();
+	if (m_disp) {
+		m_disp->acknowledge_resize();
+		m_disp->resize({ m_disp->get_width(), m_disp->get_height() }); // size 0 bug, workaround
+		m_disp->acknowledge_resize();
+
+		if (m_disp->get_width() < prop_minimum_screen_size[0] || m_disp->get_height() < prop_minimum_screen_size[1]) {
+			m_disp->resize({
+				m_disp->get_width() < prop_minimum_screen_size[0] ? prop_minimum_screen_size[0] : m_disp->get_width(),
+				m_disp->get_height() < prop_minimum_screen_size[1] ? prop_minimum_screen_size[1] : m_disp->get_height()
+			});
+			m_disp->acknowledge_resize();
+		}
+	}
 }
 
 Window::camera& Window::cam()
 {
 	return m_targ_cam;
+}
+
+void Window::post_update()
+{
+	m_evcustom.emit((void*)1, [](auto) {}, prop_self_event_id, [] {});
 }
 
 bool Window::has_display() const
@@ -251,7 +343,57 @@ void Window::set_text(const std::string& s, double for_sec)
 
 void Window::set_title(const std::string& s)
 {
-	m_disp->set_title(prop_base_window_name + s);
+	if (m_disp) m_disp->set_title(prop_base_window_name + s);
+}
+
+void Window::post_wait(std::function<void(void)> f)
+{
+	if (!f) return;
+	{
+		Lunaris::fast_lock_guard l(m_mutex);
+		m_task = f;
+	}
+	while (m_task) al_rest(1.0 / 200);
+}
+
+void Window::toggle_fullscreen()
+{
+	if (!m_disp) return;
+	Lunaris::fast_lock_guard l(m_mutex);
+
+	if (m_was_fullscreen = !m_was_fullscreen) { // should be fullscreen
+		auto& i = m_last_display_before_fullscreen;
+
+		i.size[0] = m_disp->get_width();
+		i.size[1] = m_disp->get_height();
+
+		const auto p = m_disp->get_position();
+
+		i.offset[0] = p.first;
+		i.offset[1] = p.second;
+
+		const auto targ = _get_target_display_info();
+
+		m_disp->set_flag(ALLEGRO_NOFRAME, true);
+		m_disp->set_position({ targ.offset[0], targ.offset[1] });
+		m_disp->resize({ targ.size[0], targ.size[1] });
+		m_disp->acknowledge_resize();
+		m_disp->set_icon_from_resource(IDI_ICON1);
+	}
+	else { // undo fullscreen
+		const auto& targ = m_last_display_before_fullscreen;
+
+		m_disp->resize({ targ.size[0], targ.size[1] });
+		m_disp->acknowledge_resize();
+		m_disp->set_position({ targ.offset[0], targ.offset[1] });
+		m_disp->set_flag(ALLEGRO_NOFRAME, false);
+		m_disp->set_icon_from_resource(IDI_ICON1);
+	}
+}
+
+std::string Window::clipboard_text() const
+{
+	return m_disp ? m_disp->get_clipboard_text() : "";
 }
 
 

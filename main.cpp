@@ -47,11 +47,10 @@ int main(int argc, char* argv[]) // working dir before: $(ProjectDir)
 		gconf.set("general", "last_update_time_check", std::to_string(launch_time_utc));
 	}
 
-	g_save_conf();
-
-	
+	g_save_conf();	
 
 	Window window;
+	std::unique_ptr<AllegroCPP::File_tmp> tmp_file_fly;
 	AllegroCPP::Event_queue ev_qu;
 	bool m_down = false, ctl_down = false;
 	struct _async {
@@ -61,50 +60,120 @@ int main(int argc, char* argv[]) // working dir before: $(ProjectDir)
 		AllegroCPP::Thread self;
 	} dat;
 	
-	const auto put_in_window_from_path = [&window](const std::string& p, int mode) {auto bmp = load_bitmap_auto(p, mode); if (std::holds_alternative<AllegroCPP::Bitmap>(bmp)) { window.put(std::move(std::get<AllegroCPP::Bitmap>(bmp))); return true; } else if (std::holds_alternative<AllegroCPP::GIF>(bmp)) { window.put(std::move(std::get<AllegroCPP::GIF>(bmp))); return true; } return false;  };
-	
 
-	dat.self.create([&dat, &argc, &argv, &window, &put_in_window_from_path] {
-		const std::string find_idx = argc > 1 ? argv[1] : "";
+	const auto handle_variant = [&window](std::variant<AllegroCPP::Bitmap, AllegroCPP::GIF, bool>&& bmp) { if (std::holds_alternative<AllegroCPP::Bitmap>(bmp)) { window.put(std::move(std::get<AllegroCPP::Bitmap>(bmp))); return true; } else if (std::holds_alternative<AllegroCPP::GIF>(bmp)) { window.put(std::move(std::get<AllegroCPP::GIF>(bmp))); return true; } return false;  };
+	const auto put_in_window_from_path_async = [&](const std::string& p) -> std::variant<AllegroCPP::Bitmap, AllegroCPP::GIF, bool> { try { std::variant<AllegroCPP::Bitmap, AllegroCPP::GIF, bool> _res; window.post_wait([p, &_res] { _res = load_bitmap_auto(p, ALLEGRO_MIN_LINEAR | ALLEGRO_VIDEO_BITMAP); }); return _res; } catch (...) { return false; } };
+
+	const auto _async_load_path = [&tmp_file_fly, &dat, &window, &put_in_window_from_path_async, &handle_variant] (const std::string& first_arg) {
+		dat.ready = false;
+		dat.index = 0;
+
+		auto& gconf = g_conf();
+		std::string find_idx = first_arg;
+
+		const auto c1 = gconf.get("history", "last_path");
+
+		if (find_idx.empty() && c1.length()) find_idx = c1;
+
+		if (find_idx.find("http") == 0) { // assume URL
+
+			window.set_text("Downloading from url...");
+			window.set_title(" - Downloading...");
+
+			auto mov = std::move(tmp_file_fly); // backup
+			tmp_file_fly = std::make_unique<AllegroCPP::File_tmp>();
+
+			const auto buf = http_get(find_idx);
+
+			if (buf.empty()) {
+				window.set_text("Could not load from URL.");
+				window.set_title("");
+				tmp_file_fly = std::move(mov);
+				dat.ready = true;
+				return false;
+			}
+
+			tmp_file_fly->write(buf.data(), buf.size());
+			tmp_file_fly->flush();
+
+			if (handle_variant(std::move(put_in_window_from_path_async(tmp_file_fly->get_filepath())))) {
+				window.set_text("Loaded " + find_idx);
+				window.set_title(" - " + find_idx);
+				gconf.set("history", "last_path", find_idx);
+				g_save_conf();
+			}
+			else {
+				window.set_text("Could not load from URL.");
+				window.set_title("");
+				tmp_file_fly = std::move(mov);
+			}
+
+			dat.ready = true;
+			return false;
+		}
+
 		window.set_text("Loading folder in the background...");
+		window.set_title(" - Loading...");
 
 		bool has_put_once = false;
+		size_t issue_count = 0;
 
-		if (argc > 1 && strlen(argv[1]) > 0) {
-			has_put_once = put_in_window_from_path(argv[1], ALLEGRO_MEMORY_BITMAP);
+		if (find_idx.size()) {
+			has_put_once = handle_variant(std::move(put_in_window_from_path_async(find_idx)));
+			if (has_put_once) {
+				window.set_title(" - " + std::string(find_idx));
+			}
 		}
 
 		std::string path = ".";
+		for (auto& i : find_idx) if (i == '\\') i = '/';
 
-		if (const size_t p = find_idx.rfind('\\'); p != std::string::npos) {
-			path = find_idx.substr(0, p);
-			if (path.empty()) path = ".";
+		gconf.set("history", "last_path", find_idx);
+		g_save_conf();
+
+		if (std::filesystem::is_directory(find_idx)) {
+			path = find_idx;
+			find_idx.clear(); // CLEAR IN find_idx BECAUSE IT WON'T SEARCH FOR FOLDER IN ITERATION
+		}
+		else if (const size_t p = find_idx.rfind('/'); p != std::string::npos) {
+			const auto test = find_idx.substr(0, p);
+			if (std::filesystem::is_directory(test)) path = test;
 		}
 
 		for (const auto& p : std::filesystem::directory_iterator{ path }) {
-			if (!p.is_regular_file()) continue;
-			std::string pstr = std::filesystem::canonical(p.path()).string();
-			for (auto& i : pstr) if (i == '\\') i = '/';
+			try {
+				if (!p.is_regular_file()) continue;
+				std::string pstr = std::filesystem::canonical(p.path()).string();
+				for (auto& i : pstr) if (i == '\\') i = '/';
 
 
-			if (!find_idx.empty() && pstr == find_idx) {
-				dat.index = dat.items_in_folder.size();
+				if (!find_idx.empty() && pstr == find_idx) {
+					dat.index = dat.items_in_folder.size();
+				}
+
+				if (!has_put_once) {
+					has_put_once = handle_variant(std::move(put_in_window_from_path_async(pstr)));
+					if (has_put_once) {
+						window.set_title(" - " + pstr);
+					}
+					dat.index = dat.items_in_folder.size();
+				}
+
+				dat.items_in_folder.push_back(pstr);
 			}
-
-			if (!has_put_once) {
-				has_put_once = put_in_window_from_path(pstr, ALLEGRO_MEMORY_BITMAP);
-				dat.index = dat.items_in_folder.size();
+			catch (...) {
+				++issue_count;
 			}
-
-			dat.items_in_folder.push_back(pstr);
 		}
 
-		window.set_text("Found possibly " + std::to_string(dat.items_in_folder.size()) + " images in this folder.");
+		window.set_text("Found possibly " + std::to_string(dat.items_in_folder.size()) + " images in this folder." + (issue_count > 0 ? (" Issues: " + std::to_string(issue_count)) : ""));
 		//al_rest(5.0);
 		//window.set_text("");
 		dat.ready = true;
 		return false;
-	}, AllegroCPP::Thread::Mode::NORMAL);
+	};
+
+	dat.self.create([&] { return _async_load_path(argc > 1 ? argv[1] : ""); }, AllegroCPP::Thread::Mode::NORMAL);
 
 	while (!window.has_display()) std::this_thread::sleep_for(std::chrono::milliseconds(25));
 
@@ -118,15 +187,19 @@ int main(int argc, char* argv[]) // working dir before: $(ProjectDir)
 	//}
 
 	const auto func_adv_back = [&](int dir) {
+		if (dat.items_in_folder.size() <= 1) return;
 		if (dir >= 0) {
 			window.set_text("Loading image, please wait...");
+			window.set_title(" - Loading...");
 			for (size_t p = 0; p < dat.items_in_folder.size(); ++p) {
 				if (++dat.index >= dat.items_in_folder.size()) dat.index = 0;
 
 				window.set_text("Loading " + std::to_string(dat.index + 1) + "/" + std::to_string(dat.items_in_folder.size()) + "...", 1e20);
 
-				if (put_in_window_from_path(dat.items_in_folder[dat.index], ALLEGRO_MEMORY_BITMAP)) {
+				if (handle_variant(std::move(put_in_window_from_path_async(dat.items_in_folder[dat.index])))) {
 					window.set_text("Loaded " + std::to_string(dat.index + 1) + "/" + std::to_string(dat.items_in_folder.size()) + ".");
+					window.set_title(" - " + dat.items_in_folder[dat.index]);
+					gconf.set("history", "last_path", dat.items_in_folder[dat.index]);
 					break;
 				}
 
@@ -134,17 +207,22 @@ int main(int argc, char* argv[]) // working dir before: $(ProjectDir)
 		}
 		else {
 			window.set_text("Loading image, please wait...");
+			window.set_title(" - Loading...");
 			for (size_t p = 0; p < dat.items_in_folder.size(); ++p) {
 				if (dat.index-- == 0) dat.index = dat.items_in_folder.size() - 1;
 
 				window.set_text("Loading " + std::to_string(dat.index + 1) + "/" + std::to_string(dat.items_in_folder.size()) + "...", 1e20);
 
-				if (put_in_window_from_path(dat.items_in_folder[dat.index], ALLEGRO_MEMORY_BITMAP)) {
+				if (handle_variant(std::move(put_in_window_from_path_async(dat.items_in_folder[dat.index])))) {
 					window.set_text("Loaded " + std::to_string(dat.index + 1) + "/" + std::to_string(dat.items_in_folder.size()) + ".");
+					window.set_title(" - " + dat.items_in_folder[dat.index]);
+					gconf.set("history", "last_path", dat.items_in_folder[dat.index]);
 					break;
 				}
 			}
 		}
+
+		g_save_conf();
 	};
 	
 
@@ -156,7 +234,7 @@ int main(int argc, char* argv[]) // working dir before: $(ProjectDir)
 		switch (ev.get().type) {
 		case ALLEGRO_EVENT_DISPLAY_CLOSE:
 			window.set_text("Closing in a second.");
-			al_rest(1.0);
+			al_rest(0.25);
 			cout << console::color::YELLOW << "Close";
 			run = false;
 			continue;
@@ -170,9 +248,11 @@ int main(int argc, char* argv[]) // working dir before: $(ProjectDir)
 			if (m_down) {
 				window.cam().translate(mse.dx, mse.dy);
 				window.cam().rotate(mse.dz);
+				window.post_update();
 			}
-			else {
+			else if (mse.dz != 0) {
 				window.cam().scale(mse.dz);
+				window.post_update();
 			}
 		}
 			break;
@@ -183,7 +263,7 @@ int main(int argc, char* argv[]) // working dir before: $(ProjectDir)
 			if (ev.get().mouse.button == 1) m_down = false;
 			break;
 		case ALLEGRO_EVENT_KEY_DOWN:
-			ctl_down |= (ev.get().keyboard.keycode == ALLEGRO_KEYMOD_CTRL);
+			ctl_down |= (ev.get().keyboard.keycode == ALLEGRO_KEY_LCTRL || ev.get().keyboard.keycode == ALLEGRO_KEY_RCTRL);
 
 			switch (ev.get().keyboard.keycode) {
 			case ALLEGRO_KEY_R:
@@ -198,6 +278,21 @@ int main(int argc, char* argv[]) // working dir before: $(ProjectDir)
 				if (!dat.ready) break;
 				dat.self.stop();
 				dat.self.create([&] {func_adv_back(-1); return false; }, AllegroCPP::Thread::Mode::NORMAL);
+				break;
+			case ALLEGRO_KEY_F11:
+				window.toggle_fullscreen();
+				break;
+			case ALLEGRO_KEY_V:
+				if (ctl_down) {
+					if (!dat.ready) break;
+					dat.self.stop();
+					if (auto s = window.clipboard_text(); s.size()) {
+						dat.self.create([&dat, &_async_load_path, s] {
+							dat.items_in_folder.clear();
+							return _async_load_path(s);
+						}, AllegroCPP::Thread::Mode::NORMAL);
+					}
+				}
 				break;
 			}
 			break;

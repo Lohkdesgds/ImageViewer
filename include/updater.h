@@ -35,3 +35,5 @@ public:
 	bool valid() const;
 	const data& get() const;
 };
+
+std::string http_get(const std::string&);
