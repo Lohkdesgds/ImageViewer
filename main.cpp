@@ -13,7 +13,7 @@
 using namespace Lunaris;
 
 const uint64_t launch_time_utc = std::chrono::duration_cast<std::chrono::duration<std::uint64_t>>(std::chrono::utc_clock().now().time_since_epoch()).count();
-const uint64_t launch_time_delta = 7200; // every 2 hours?
+const uint64_t launch_time_delta = 86400; // every 2 hours?
 
 constexpr auto load_bitmap_auto = [](const std::string& p, int mode) -> std::variant<AllegroCPP::Bitmap, AllegroCPP::GIF, bool> {try { AllegroCPP::Bitmap tst(p, mode); if (tst.valid()) return tst; } catch (...) { try { AllegroCPP::GIF tg(p, mode); if (tg.valid()) return tg; } catch (...) { return false; } } return false; };
 
@@ -234,7 +234,7 @@ int main(int argc, char* argv[]) // working dir before: $(ProjectDir)
 		switch (ev.get().type) {
 		case ALLEGRO_EVENT_DISPLAY_CLOSE:
 			window.set_text("Closing in a second.");
-			al_rest(0.25);
+			al_rest(0.5);
 			cout << console::color::YELLOW << "Close";
 			run = false;
 			continue;
@@ -245,7 +245,7 @@ int main(int argc, char* argv[]) // working dir before: $(ProjectDir)
 		{
 			const auto& mse = ev.get().mouse;
 
-			if (m_down) {
+			if (m_down || ctl_down) {
 				window.cam().translate(mse.dx, mse.dy);
 				window.cam().rotate(mse.dz);
 				window.post_update();
@@ -297,7 +297,7 @@ int main(int argc, char* argv[]) // working dir before: $(ProjectDir)
 			}
 			break;
 		case ALLEGRO_EVENT_KEY_UP:
-			if (ev.get().keyboard.keycode == ALLEGRO_KEYMOD_CTRL) ctl_down = false;
+			if (ev.get().keyboard.keycode == ALLEGRO_KEY_LCTRL || ev.get().keyboard.keycode == ALLEGRO_KEY_RCTRL) ctl_down = false;
 		}
 	}
 
