@@ -1,48 +1,156 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
-    <Filter Include="Source Files">
-      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
-      <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    <Filter Include="deps">
+      <UniqueIdentifier>{a21433a7-ee17-46f7-b313-c4cf21503866}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Source Files\Window">
-      <UniqueIdentifier>{23382797-f9bc-4c8f-aef4-f7aefabf41d4}</UniqueIdentifier>
+    <Filter Include="icon">
+      <UniqueIdentifier>{e5067fc0-6a1a-4e63-b001-50e008be0e7e}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Source Files\Config">
-      <UniqueIdentifier>{50c863d7-79cf-4751-9ec5-70961d589a9f}</UniqueIdentifier>
+    <Filter Include="app">
+      <UniqueIdentifier>{6dfc6450-233d-4405-be28-00a08d4f907e}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Source Files\Shared">
-      <UniqueIdentifier>{a35dd3e6-ef41-4a1e-bc45-41d7dbd242b4}</UniqueIdentifier>
+    <Filter Include="app\src">
+      <UniqueIdentifier>{a570ef42-7d36-4bf4-80a0-838703b1a3ba}</UniqueIdentifier>
     </Filter>
-  </ItemGroup>
-  <ItemGroup>
-    <ClCompile Include="main.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="window_control.cpp">
-      <Filter>Source Files\Window</Filter>
-    </ClCompile>
-    <ClCompile Include="configuration.cpp">
-      <Filter>Source Files\Config</Filter>
-    </ClCompile>
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="resource.h" />
-    <ClInclude Include="window_control.h">
-      <Filter>Source Files\Window</Filter>
-    </ClInclude>
-    <ClInclude Include="configuration.h">
-      <Filter>Source Files\Config</Filter>
-    </ClInclude>
-    <ClInclude Include="shared.h">
-      <Filter>Source Files\Shared</Filter>
-    </ClInclude>
+    <Filter Include="app\include">
+      <UniqueIdentifier>{14ac0190-d3ba-4e50-a8cb-e059fd54da0e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="deps\AllegroCPP/src">
+      <UniqueIdentifier>{0fe403d6-abe2-47c9-905f-3161f68cb091}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="ImageViewer.rc" />
   </ItemGroup>
   <ItemGroup>
-    <Image Include="icon.ico" />
+    <Image Include="icon\app.ico">
+      <Filter>icon</Filter>
+    </Image>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="main.cpp">
+      <Filter>app\src</Filter>
+    </ClCompile>
+    <ClCompile Include="deps\AllegroCPP\src\locked_region.cpp">
+      <Filter>deps\AllegroCPP/src</Filter>
+    </ClCompile>
+    <ClCompile Include="deps\AllegroCPP\src\menu.cpp">
+      <Filter>deps\AllegroCPP/src</Filter>
+    </ClCompile>
+    <ClCompile Include="deps\AllegroCPP\src\monitor_info.cpp">
+      <Filter>deps\AllegroCPP/src</Filter>
+    </ClCompile>
+    <ClCompile Include="deps\AllegroCPP\src\mouse.cpp">
+      <Filter>deps\AllegroCPP/src</Filter>
+    </ClCompile>
+    <ClCompile Include="deps\AllegroCPP\src\native_dialog.cpp">
+      <Filter>deps\AllegroCPP/src</Filter>
+    </ClCompile>
+    <ClCompile Include="deps\AllegroCPP\src\path.cpp">
+      <Filter>deps\AllegroCPP/src</Filter>
+    </ClCompile>
+    <ClCompile Include="deps\AllegroCPP\src\shader.cpp">
+      <Filter>deps\AllegroCPP/src</Filter>
+    </ClCompile>
+    <ClCompile Include="deps\AllegroCPP\src\state.cpp">
+      <Filter>deps\AllegroCPP/src</Filter>
+    </ClCompile>
+    <ClCompile Include="deps\AllegroCPP\src\thread.cpp">
+      <Filter>deps\AllegroCPP/src</Filter>
+    </ClCompile>
+    <ClCompile Include="deps\AllegroCPP\src\timer.cpp">
+      <Filter>deps\AllegroCPP/src</Filter>
+    </ClCompile>
+    <ClCompile Include="deps\AllegroCPP\src\transform.cpp">
+      <Filter>deps\AllegroCPP/src</Filter>
+    </ClCompile>
+    <ClCompile Include="deps\AllegroCPP\src\utfstring.cpp">
+      <Filter>deps\AllegroCPP/src</Filter>
+    </ClCompile>
+    <ClCompile Include="deps\AllegroCPP\src\vertex.cpp">
+      <Filter>deps\AllegroCPP/src</Filter>
+    </ClCompile>
+    <ClCompile Include="deps\AllegroCPP\src\video.cpp">
+      <Filter>deps\AllegroCPP/src</Filter>
+    </ClCompile>
+    <ClCompile Include="deps\AllegroCPP\src\audio_all.cpp">
+      <Filter>deps\AllegroCPP/src</Filter>
+    </ClCompile>
+    <ClCompile Include="deps\AllegroCPP\src\audio_mixer.cpp">
+      <Filter>deps\AllegroCPP/src</Filter>
+    </ClCompile>
+    <ClCompile Include="deps\AllegroCPP\src\audio_sample.cpp">
+      <Filter>deps\AllegroCPP/src</Filter>
+    </ClCompile>
+    <ClCompile Include="deps\AllegroCPP\src\audio_sample_instance.cpp">
+      <Filter>deps\AllegroCPP/src</Filter>
+    </ClCompile>
+    <ClCompile Include="deps\AllegroCPP\src\audio_stream.cpp">
+      <Filter>deps\AllegroCPP/src</Filter>
+    </ClCompile>
+    <ClCompile Include="deps\AllegroCPP\src\audio_voice.cpp">
+      <Filter>deps\AllegroCPP/src</Filter>
+    </ClCompile>
+    <ClCompile Include="deps\AllegroCPP\src\bitmap.cpp">
+      <Filter>deps\AllegroCPP/src</Filter>
+    </ClCompile>
+    <ClCompile Include="deps\AllegroCPP\src\config.cpp">
+      <Filter>deps\AllegroCPP/src</Filter>
+    </ClCompile>
+    <ClCompile Include="deps\AllegroCPP\src\display.cpp">
+      <Filter>deps\AllegroCPP/src</Filter>
+    </ClCompile>
+    <ClCompile Include="deps\AllegroCPP\src\display_mode.cpp">
+      <Filter>deps\AllegroCPP/src</Filter>
+    </ClCompile>
+    <ClCompile Include="deps\AllegroCPP\src\event_queue.cpp">
+      <Filter>deps\AllegroCPP/src</Filter>
+    </ClCompile>
+    <ClCompile Include="deps\AllegroCPP\src\events.cpp">
+      <Filter>deps\AllegroCPP/src</Filter>
+    </ClCompile>
+    <ClCompile Include="deps\AllegroCPP\src\file.cpp">
+      <Filter>deps\AllegroCPP/src</Filter>
+    </ClCompile>
+    <ClCompile Include="deps\AllegroCPP\src\font.cpp">
+      <Filter>deps\AllegroCPP/src</Filter>
+    </ClCompile>
+    <ClCompile Include="deps\AllegroCPP\src\gif.cpp">
+      <Filter>deps\AllegroCPP/src</Filter>
+    </ClCompile>
+    <ClCompile Include="deps\AllegroCPP\src\keyboard.cpp">
+      <Filter>deps\AllegroCPP/src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\updater.cpp">
+      <Filter>app\src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\versioning.cpp">
+      <Filter>app\src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\window.cpp">
+      <Filter>app\src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\configurer.cpp">
+      <Filter>app\src</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="resource.h">
+      <Filter>icon</Filter>
+    </ClInclude>
+    <ClInclude Include="include\updater.h">
+      <Filter>app\include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\versioning.h">
+      <Filter>app\include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\window.h">
+      <Filter>app\include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\configurer.h">
+      <Filter>app\include</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />

@@ -1,6 +1,15 @@
-[submodule "Lunaris"]
-	path = Lunaris
-	url = https://www.github.com/Lohkdesgds/Lunaris
-[submodule "JSON"]
-	path = JSON
+[submodule "deps/json"]
+	path = deps/json
 	url = https://github.com/nlohmann/json
+[submodule "deps/AllegroCPP"]
+	path = deps/AllegroCPP
+	url = https://github.com/Lohkdesgds/AllegroCPP
+[submodule "deps/Lunaris/HTTP"]
+	path = deps/Lunaris/HTTP
+	url = https://github.com/LunarisLib/Lunaris-HTTP
+[submodule "deps/Lunaris/Console"]
+	path = deps/Lunaris/Console
+	url = https://github.com/LunarisLib/Lunaris-Console
+[submodule "deps/Lunaris/Mutex"]
+	path = deps/Lunaris/Mutex
+	url = https://github.com/LunarisLib/Lunaris-Mutex
