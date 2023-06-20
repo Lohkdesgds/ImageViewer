@@ -125,7 +125,10 @@ bool Window::_loop()
 		m_task = {};
 	}
 
-	m_evqu.wait_for_event(0.2f); // it is timer for sure.
+	do {
+		m_evqu.wait_for_event(0.2f); // it is timer for sure.
+	} while (m_evqu.has_event()); // free up memory
+
 	const double timer_speed_now = m_timer.get_speed();
 
 	//m_disp->clear_to_color(al_map_rgb(127 + 128 * cos(al_get_time()), 25, m_curr_cam.m_need_refresh ? 255 : 25));
