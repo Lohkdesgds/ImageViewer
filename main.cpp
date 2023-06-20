@@ -13,7 +13,7 @@
 using namespace Lunaris;
 
 const uint64_t launch_time_utc = std::chrono::duration_cast<std::chrono::duration<std::uint64_t>>(std::chrono::utc_clock().now().time_since_epoch()).count();
-const uint64_t launch_time_delta = 7200; // every 2 hours?
+const uint64_t launch_time_delta = 86400; // every 2 hours?
 
 constexpr auto load_bitmap_auto = [](const std::string& p, int mode) -> std::variant<AllegroCPP::Bitmap, AllegroCPP::GIF, bool> {try { AllegroCPP::Bitmap tst(p, mode); if (tst.valid()) return tst; } catch (...) { try { AllegroCPP::GIF tg(p, mode); if (tg.valid()) return tg; } catch (...) { return false; } } return false; };
 
