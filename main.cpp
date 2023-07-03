@@ -186,12 +186,12 @@ int main(int argc, char* argv[]) // working dir before: $(ProjectDir)
 	//	window.put(std::move(bmp), true);
 	//}
 
-	const auto func_adv_back = [&](int dir) {
+	const auto func_adv_back = [&](int dir, bool& runnin) {
 		if (dat.items_in_folder.size() <= 1) return;
 		if (dir >= 0) {
 			window.set_text("Loading image, please wait...");
 			window.set_title(" - Loading...");
-			for (size_t p = 0; p < dat.items_in_folder.size(); ++p) {
+			for (size_t p = 0; p < dat.items_in_folder.size() && runnin; ++p) {
 				if (++dat.index >= dat.items_in_folder.size()) dat.index = 0;
 
 				window.set_text("Loading " + std::to_string(dat.index + 1) + "/" + std::to_string(dat.items_in_folder.size()) + "...", 1e20);
@@ -208,7 +208,7 @@ int main(int argc, char* argv[]) // working dir before: $(ProjectDir)
 		else {
 			window.set_text("Loading image, please wait...");
 			window.set_title(" - Loading...");
-			for (size_t p = 0; p < dat.items_in_folder.size(); ++p) {
+			for (size_t p = 0; p < dat.items_in_folder.size() && runnin; ++p) {
 				if (dat.index-- == 0) dat.index = dat.items_in_folder.size() - 1;
 
 				window.set_text("Loading " + std::to_string(dat.index + 1) + "/" + std::to_string(dat.items_in_folder.size()) + "...", 1e20);
@@ -221,7 +221,7 @@ int main(int argc, char* argv[]) // working dir before: $(ProjectDir)
 				}
 			}
 		}
-
+		if (!runnin) return; // assume no save if drop
 		g_save_conf();
 	};
 	
@@ -233,10 +233,13 @@ int main(int argc, char* argv[]) // working dir before: $(ProjectDir)
 
 		switch (ev.get().type) {
 		case ALLEGRO_EVENT_DISPLAY_CLOSE:
-			window.set_text("Closing in a second.");
-			al_rest(0.5);
-			cout << console::color::YELLOW << "Close";
+			cout << console::color::YELLOW << "Close triggered";
 			run = false;
+			al_rest(0.1);
+			dat.self.stop();
+			cout << console::color::YELLOW << "Closing...";
+			while (!dat.ready) al_rest(0.1);
+			cout << console::color::YELLOW << "Closed.";
 			continue;
 		case ALLEGRO_EVENT_DISPLAY_RESIZE:
 			window.ack_resize();
@@ -272,12 +275,12 @@ int main(int argc, char* argv[]) // working dir before: $(ProjectDir)
 			case ALLEGRO_KEY_RIGHT:
 				if (!dat.ready) break;
 				dat.self.stop();
-				dat.self.create([&] {func_adv_back(1); return false; }, AllegroCPP::Thread::Mode::NORMAL);
+				dat.self.create([&] {func_adv_back(1, run); return false; }, AllegroCPP::Thread::Mode::NORMAL);
 				break;
 			case ALLEGRO_KEY_LEFT:
 				if (!dat.ready) break;
 				dat.self.stop();
-				dat.self.create([&] {func_adv_back(-1); return false; }, AllegroCPP::Thread::Mode::NORMAL);
+				dat.self.create([&] {func_adv_back(-1, run); return false; }, AllegroCPP::Thread::Mode::NORMAL);
 				break;
 			case ALLEGRO_KEY_F11:
 				window.toggle_fullscreen();

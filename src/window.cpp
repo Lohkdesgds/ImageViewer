@@ -104,7 +104,7 @@ bool Window::_build()
 	al_set_new_display_option(ALLEGRO_SAMPLE_BUFFERS, 1, ALLEGRO_SUGGEST);
 	al_set_new_display_option(ALLEGRO_SAMPLES, 8, ALLEGRO_SUGGEST);
 
-	m_disp = std::shared_ptr<AllegroCPP::Display>(new AllegroCPP::Display({ di.size[0], di.size[1] }, prop_base_window_name, ALLEGRO_RESIZABLE, mpos));
+	m_disp = std::shared_ptr<AllegroCPP::Display>(new AllegroCPP::Display({ di.size[0], di.size[1] }, prop_base_window_name, ALLEGRO_RESIZABLE | ALLEGRO_OPENGL | ALLEGRO_OPENGL_ES_PROFILE, mpos));
 	m_disp->set_icon_from_resource(IDI_ICON1);
 	m_font = std::make_unique<AllegroCPP::Font>();
 
@@ -126,7 +126,66 @@ bool Window::_loop()
 	}
 
 	do {
-		m_evqu.wait_for_event(0.2f); // it is timer for sure.
+		const auto ev = m_evqu.wait_for_event(0.2f);
+		if (!ev.valid()) continue;
+
+
+		switch (ev.get().type) {
+		case prop_self_event_id:
+		{
+			switch (ev.get().user.data1)
+			{
+			case 1: // "just update"
+				break;
+			case 2: // ack resize
+				m_disp->acknowledge_resize();
+				m_disp->resize({ m_disp->get_width(), m_disp->get_height() }); // size 0 bug, workaround
+				m_disp->acknowledge_resize();
+
+				if (m_disp->get_width() < prop_minimum_screen_size[0] || m_disp->get_height() < prop_minimum_screen_size[1]) {
+					m_disp->resize({
+						m_disp->get_width() < prop_minimum_screen_size[0] ? prop_minimum_screen_size[0] : m_disp->get_width(),
+						m_disp->get_height() < prop_minimum_screen_size[1] ? prop_minimum_screen_size[1] : m_disp->get_height()
+						});
+					m_disp->acknowledge_resize();
+				}
+				break;
+			case 3: // toggle fullscreen window
+				if (m_was_fullscreen = !m_was_fullscreen) { // should be fullscreen
+					auto& i = m_last_display_before_fullscreen;
+
+					i.size[0] = m_disp->get_width();
+					i.size[1] = m_disp->get_height();
+
+					const auto p = m_disp->get_position();
+
+					i.offset[0] = p.first;
+					i.offset[1] = p.second;
+
+					const auto targ = _get_target_display_info();
+
+					m_disp->set_flag(ALLEGRO_NOFRAME, true);
+					m_disp->set_position({ targ.offset[0], targ.offset[1] });
+					m_disp->resize({ targ.size[0], targ.size[1] });
+					m_disp->acknowledge_resize();
+					m_disp->set_icon_from_resource(IDI_ICON1);
+				}
+				else { // undo fullscreen
+					const auto& targ = m_last_display_before_fullscreen;
+
+					m_disp->resize({ targ.size[0], targ.size[1] });
+					m_disp->acknowledge_resize();
+					m_disp->set_position({ targ.offset[0], targ.offset[1] });
+					m_disp->set_flag(ALLEGRO_NOFRAME, false);
+					m_disp->set_icon_from_resource(IDI_ICON1);
+				}
+				break;
+			}
+		}
+			break; // end of custom event
+		}
+
+
 	} while (m_evqu.has_event()); // free up memory
 
 	const double timer_speed_now = m_timer.get_speed();
@@ -307,19 +366,7 @@ void Window::put(AllegroCPP::GIF&& b, const bool reset_cam)
 
 void Window::ack_resize()
 {
-	if (m_disp) {
-		m_disp->acknowledge_resize();
-		m_disp->resize({ m_disp->get_width(), m_disp->get_height() }); // size 0 bug, workaround
-		m_disp->acknowledge_resize();
-
-		if (m_disp->get_width() < prop_minimum_screen_size[0] || m_disp->get_height() < prop_minimum_screen_size[1]) {
-			m_disp->resize({
-				m_disp->get_width() < prop_minimum_screen_size[0] ? prop_minimum_screen_size[0] : m_disp->get_width(),
-				m_disp->get_height() < prop_minimum_screen_size[1] ? prop_minimum_screen_size[1] : m_disp->get_height()
-			});
-			m_disp->acknowledge_resize();
-		}
-	}
+	m_evcustom.emit((void*)2, [](auto) {}, prop_self_event_id, [] {});
 }
 
 Window::camera& Window::cam()
@@ -361,37 +408,7 @@ void Window::post_wait(std::function<void(void)> f)
 
 void Window::toggle_fullscreen()
 {
-	if (!m_disp) return;
-	Lunaris::fast_lock_guard l(m_mutex);
-
-	if (m_was_fullscreen = !m_was_fullscreen) { // should be fullscreen
-		auto& i = m_last_display_before_fullscreen;
-
-		i.size[0] = m_disp->get_width();
-		i.size[1] = m_disp->get_height();
-
-		const auto p = m_disp->get_position();
-
-		i.offset[0] = p.first;
-		i.offset[1] = p.second;
-
-		const auto targ = _get_target_display_info();
-
-		m_disp->set_flag(ALLEGRO_NOFRAME, true);
-		m_disp->set_position({ targ.offset[0], targ.offset[1] });
-		m_disp->resize({ targ.size[0], targ.size[1] });
-		m_disp->acknowledge_resize();
-		m_disp->set_icon_from_resource(IDI_ICON1);
-	}
-	else { // undo fullscreen
-		const auto& targ = m_last_display_before_fullscreen;
-
-		m_disp->resize({ targ.size[0], targ.size[1] });
-		m_disp->acknowledge_resize();
-		m_disp->set_position({ targ.offset[0], targ.offset[1] });
-		m_disp->set_flag(ALLEGRO_NOFRAME, false);
-		m_disp->set_icon_from_resource(IDI_ICON1);
-	}
+	m_evcustom.emit((void*)3, [](auto) {}, prop_self_event_id, [] {});
 }
 
 std::string Window::clipboard_text() const
