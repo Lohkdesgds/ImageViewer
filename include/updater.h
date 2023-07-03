@@ -13,7 +13,7 @@
 const std::string url_update_check = "https://api.github.com/repos/Lohkdesgds/ImageViewer/releases/latest";
 const std::string url_update_popup = "https://github.com/Lohkdesgds/ImageViewer/releases";
 
-const auto current_version = Version("5.0.1");
+const auto current_version = Version("5.0.2");
 
 class Updater {
 	struct data {
