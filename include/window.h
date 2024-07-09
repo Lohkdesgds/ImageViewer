@@ -7,6 +7,7 @@
 #include <memory>
 
 constexpr float prop_scale_of_screen = 0.6f;
+constexpr float prop_max_scale_of_screen_on_open = 0.95f;
 constexpr float prop_smoothness_motion = 4.5f;
 constexpr float prop_mouse_transl_factor = 1.25f;
 constexpr float prop_mouse_scale_factor = 0.2f;
@@ -35,8 +36,9 @@ class Window {
 		void rotate(int);
 	};
 	struct display_info {
+		AllegroCPP::Monitor_info mi{}; // cpy
 		int offset[2] = { 0, 0 };
-		int min_h = 20;
+		//int min_h = 20; // not needed anymore
 		int size[2] = { 1280, 720 };
 	};
 

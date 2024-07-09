@@ -83,7 +83,7 @@ bool Window::_build()
 	}
 	else {
 		di.size[0] *= prop_scale_of_screen;
-	}
+	}			
 
 	if (suggested_ss[1] >= prop_minimum_screen_size[1]) {
 		di.size[1] = suggested_ss[1];
@@ -92,14 +92,31 @@ bool Window::_build()
 		di.size[1] *= prop_scale_of_screen;
 	}
 
+	if (di.size[0] > di.mi.get_width() * prop_max_scale_of_screen_on_open) di.size[0] = di.mi.get_width() * prop_max_scale_of_screen_on_open;
+	if (di.size[1] > di.mi.get_height() * prop_max_scale_of_screen_on_open) di.size[1] = di.mi.get_height() * prop_max_scale_of_screen_on_open;
+
+	int limits[2][2]{}; // top left, down right, calculated based on target screen
+
+	// top left (x, y)
+	limits[0][0] = di.mi.m_info.x1 + di.size[0] * 0.5f;
+	limits[0][1] = di.mi.m_info.y1 + di.size[1] * 0.5f + 25 /* top bar */;
+	limits[1][0] = di.mi.m_info.x2 - di.size[0] * 0.5f;
+	limits[1][1] = di.mi.m_info.y2 - di.size[1] * 0.5f;
+
 
 	auto mpos = AllegroCPP::Mouse_cursor::get_pos();
+
+	// safe pos b4
+	if (mpos.first < limits[0][0])  mpos.first = limits[0][0];
+	if (mpos.first > limits[1][0])  mpos.first = limits[1][0];
+	if (mpos.second < limits[0][1]) mpos.second = limits[0][1];
+	if (mpos.second > limits[1][1]) mpos.second = limits[1][1];
 
 	mpos.first -= di.size[0] * 0.5f;
 	mpos.second -= di.size[1] * 0.5f;
 
 	// safe pos
-	if (mpos.second < di.min_h) mpos.second = di.min_h;
+	//if (mpos.second < di.min_h) mpos.second = di.min_h;
 
 	al_set_new_display_option(ALLEGRO_SAMPLE_BUFFERS, 1, ALLEGRO_SUGGEST);
 	al_set_new_display_option(ALLEGRO_SAMPLES, 8, ALLEGRO_SUGGEST);
@@ -168,7 +185,7 @@ bool Window::_loop()
 					m_disp->set_position({ targ.offset[0], targ.offset[1] });
 					m_disp->resize({ targ.size[0], targ.size[1] });
 					m_disp->acknowledge_resize();
-					m_disp->set_icon_from_resource(IDI_ICON1);
+					//m_disp->set_icon_from_resource(IDI_ICON1);
 				}
 				else { // undo fullscreen
 					const auto& targ = m_last_display_before_fullscreen;
@@ -177,7 +194,7 @@ bool Window::_loop()
 					m_disp->acknowledge_resize();
 					m_disp->set_position({ targ.offset[0], targ.offset[1] });
 					m_disp->set_flag(ALLEGRO_NOFRAME, false);
-					m_disp->set_icon_from_resource(IDI_ICON1);
+					//m_disp->set_icon_from_resource(IDI_ICON1);
 				}
 				break;
 			}
@@ -325,7 +342,8 @@ Window::display_info Window::_get_target_display_info()
 			di.size[1] = mi.get_height();
 			di.offset[0] = mi.m_info.x1;
 			di.offset[1] = mi.m_info.y1;
-			di.min_h = mi.m_info.y1 + 20;
+			//di.min_h = mi.m_info.y1 + 20;
+			di.mi = mi;
 			break;
 		}
 	}
